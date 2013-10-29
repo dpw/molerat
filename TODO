@@ -1,0 +1,22 @@
+convert http_client to use http_reader
+
+http reader should index headers and provide accessor
+
+thorough testing of http reader (byte-by-byte parsing, large bodies,
+prebody-body-prebody handling)
+
+combined tasklet_init_run (won't need lock)
+
+EPIPE/SIGPIPE handling.  At least make it an error.
+
+Fix the spurious accept issue in socket.c
+
+stack traces on error alerts
+
+ERROR_INVALID to replace many asserts
+
+When a client_socket is connected, its ops can be set to the
+simple_socket ops.
+
+tasklet: current_stopped and current_requeue should be combined into a
+single state flag.

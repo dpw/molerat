@@ -1,0 +1,8 @@
+[submodule "http-parser"]
+	path = http-parser
+	url = https://github.com/joyent/http-parser
+	ignore = dirty
+[submodule "skinny-mutex"]
+	path = skinny-mutex
+	url = https://github.com/dpw/skinny-mutex
+	ignore = dirty

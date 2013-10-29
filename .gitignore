@@ -1,0 +1,13 @@
+*~
+*.o
+*.dep
+*.gcov
+*.gcda
+*.gcno
+buffer_test
+tasklet_test
+queue_test
+socket_test
+echo_server
+http_server
+http_client

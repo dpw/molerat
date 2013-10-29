@@ -228,10 +228,6 @@ static int on_headers_complete(struct http_parser *hp)
 	struct http_reader *r = hp->data;
 	int i;
 
-	printf("URL <%.*s>\n",
-	       (int)(r->url_end - r->url),
-	       (char *)growbuf_offset(&r->prebody, r->url));
-
 	for (i = 0; i < r->headers_used; i++) {
 		struct http_header *h = &r->headers[i];
 		printf("Header <%.*s> <%.*s>\n",

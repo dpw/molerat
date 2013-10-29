@@ -212,7 +212,7 @@ static void construct_response(struct connection *c)
 	c->write_len = xsprintf(&c->write_buf,
 			"HTTP/1.1 200 OK\r\n"
 			/*"Date: Thu, 24 May 2012 15:14:21 GMT\r\n"*/
-			"Server: MoleRat\r\n"
+			"Server: Molerat\r\n"
 			"Last-Modified: Fri, 30 Dec 2011 21:35:47 GMT\r\n"
 			"Content-Length: %lu\r\n"
 			"Content-Type: text/html; charset=utf-8\r\n"

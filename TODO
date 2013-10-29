@@ -1,5 +1,3 @@
-convert http_client to use http_reader
-
 http reader should index headers and provide accessor
 
 thorough testing of http reader (byte-by-byte parsing, large bodies,

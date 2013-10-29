@@ -3,6 +3,7 @@
 #include "socket.h"
 #include "tasklet.h"
 #include "buffer.h"
+#include "http_reader.h"
 
 struct http_client {
 	struct mutex mutex;
@@ -11,10 +12,12 @@ struct http_client {
 	struct error err;
 	struct growbuf request;
 	struct drainbuf request_out;
+	struct http_reader reader;
 };
 
 static void write_request(void *v_c);
-static void read_response(void *v_c);
+static void read_response_prebody(void *v_c);
+static void read_response_body(void *v_c);
 
 void http_client_set_header(struct http_client *c, const char *name,
 			    const char *val)
@@ -33,8 +36,9 @@ struct http_client *http_client_create(struct socket *s)
 	tasklet_init(&c->tasklet, &c->mutex, c);
 	c->socket = s;
 	error_init(&c->err);
-	growbuf_init(&c->request, 1000);
+	http_reader_init(&c->reader, s, FALSE);
 
+	growbuf_init(&c->request, 1000);
 	growbuf_printf(&c->request, "GET %s HTTP/1.1\r\n", "/");
 	http_client_set_header(c, "Connection", "close");
 
@@ -49,6 +53,7 @@ void http_client_destroy(struct http_client *c)
 	tasklet_fini(&c->tasklet);
 	socket_destroy(c->socket);
 	error_fini(&c->err);
+	http_reader_fini(&c->reader);
 	growbuf_fini(&c->request);
 	mutex_unlock_fini(&c->mutex);
 	free(c);
@@ -69,7 +74,7 @@ static void write_request(void *v_c)
 
 		if (!len) {
 			socket_partial_close(c->socket, 1, 0, &c->err);
-			tasklet_now(&c->tasklet, read_response);
+			tasklet_now(&c->tasklet, read_response_prebody);
 			return;
 		}
 
@@ -89,33 +94,67 @@ static void write_request(void *v_c)
 	mutex_unlock(&c->mutex);
 }
 
-static void read_response(void *v_c)
+static void read_response_prebody(void *v_c)
 {
 	struct http_client *c = v_c;
-	ssize_t res;
+
+	switch (http_reader_prebody(&c->reader, &c->tasklet, &c->err)) {
+	case HTTP_READER_PREBODY_BLOCKED:
+		mutex_unlock(&c->mutex);
+		return;
+
+	case HTTP_READER_PREBODY_DONE:
+		tasklet_now(&c->tasklet, read_response_body);
+		return;
+
+	case HTTP_READER_PREBODY_CLOSED:
+		break;
+
+	case HTTP_READER_PREBODY_ERROR:
+		goto error;
+	}
+
+	socket_close(c->socket, &c->err);
+	fprintf(stderr, "Connection done\n");
+
+ error:
+	if (!error_ok(&c->err))
+		fprintf(stderr, "Error: %s\n", error_message(&c->err));
+
+	tasklet_stop(&c->tasklet);
+	socket_factory_stop();
+	mutex_unlock(&c->mutex);
+}
+
+static void read_response_body(void *v_c)
+{
+	struct http_client *c = v_c;
 	char buf[100];
 
 	for (;;) {
-		res = socket_read(c->socket, buf, 100, &c->tasklet, &c->err);
-		if (res <= 0)
+		ssize_t res = http_reader_body(&c->reader, buf, 100,
+					       &c->tasklet, &c->err);
+		if (res < 0) {
+			if (!error_ok(&c->err)) {
+				fprintf(stderr, "Error: %s\n",
+					error_message(&c->err));
+				break;
+			}
+			else {
+				/* blocked */
+				mutex_unlock(&c->mutex);
+				return;
+			}
+		}
+
+		if (res == 0)
 			break;
 
 		printf("%.*s", (int)res, buf);
 	}
 
-	if (res == 0) {
-		socket_close(c->socket, &c->err);
-		printf("\n");
-		fprintf(stderr, "Connection done\n");
-		tasklet_stop(&c->tasklet);
-		socket_factory_stop();
-	}
-
-	if (!error_ok(&c->err)) {
-		fprintf(stderr, "Error: %s\n", error_message(&c->err));
-		tasklet_stop(&c->tasklet);
-	}
-
+	tasklet_stop(&c->tasklet);
+	socket_factory_stop();
 	mutex_unlock(&c->mutex);
 }
 

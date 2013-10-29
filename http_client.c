@@ -45,11 +45,12 @@ struct http_client *http_client_create(struct socket *s)
 
 void http_client_destroy(struct http_client *c)
 {
+	mutex_lock(&c->mutex);
 	tasklet_fini(&c->tasklet);
 	socket_destroy(c->socket);
-	mutex_fini(&c->mutex);
 	error_fini(&c->err);
 	growbuf_fini(&c->request);
+	mutex_unlock_fini(&c->mutex);
 	free(c);
 }
 

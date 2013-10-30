@@ -22,12 +22,27 @@ struct http_reader {
 
 	struct socket *socket;
 	struct growbuf prebody;
-	struct http_header *headers;
+	struct http_header_internal *headers;
 	int headers_used;
 	int headers_size;
 	struct http_parser_settings settings;
 	struct http_parser parser;
 };
+
+struct http_header {
+	const char *name;
+	size_t name_len;
+	const char *value;
+	size_t value_len;
+};
+
+struct http_header_iter {
+	struct http_header header;
+	struct http_header_internal *current;
+	struct http_header_internal *end;
+	char *base;
+};
+
 
 void http_reader_init(struct http_reader *r, struct socket *socket, bool_t req);
 void http_reader_fini(struct http_reader *r);
@@ -44,5 +59,8 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 						    struct error *err);
 ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 			 struct tasklet *tasklet, struct error *err);
+
+void http_reader_headers(struct http_reader *r, struct http_header_iter *iter);
+struct http_header *http_header_iter_next(struct http_header_iter *iter);
 
 #endif

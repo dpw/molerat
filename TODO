@@ -1,4 +1,5 @@
-http reader should index headers and provide accessor
+new socket read/write interfaces (return code indicates blocked,
+progress (>0), error, closed)
 
 thorough testing of http reader (byte-by-byte parsing, large bodies,
 prebody-body-prebody handling)
@@ -8,8 +9,6 @@ combined tasklet_init_run (won't need lock)
 EPIPE/SIGPIPE handling.  At least make it an error.
 
 Fix the spurious accept issue in socket.c
-
-stack traces on error alerts
 
 ERROR_INVALID to replace many asserts
 

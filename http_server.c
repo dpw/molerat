@@ -222,6 +222,19 @@ static void construct_response(struct connection *c)
 	c->write_pos = 0;
 }
 
+static void dump_headers(struct http_reader *r)
+{
+	struct http_header_iter iter;
+	struct http_header *header;
+
+	for (http_reader_headers(r, &iter);
+	     (header = http_header_iter_next(&iter));) {
+		printf("Header <%.*s> <%.*s>\n",
+		       (int)header->name_len, header->name,
+		       (int)header->value_len, header->value);
+	}
+}
+
 static void connection_read_prebody(void *v_c)
 {
 	struct connection *c = v_c;
@@ -232,6 +245,7 @@ static void connection_read_prebody(void *v_c)
 		return;
 
 	case HTTP_READER_PREBODY_DONE:
+		dump_headers(&c->reader);
 		construct_response(c);
 		tasklet_now(&c->tasklet, connection_read_body);
 		return;

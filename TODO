@@ -1,5 +1,3 @@
-Put all run queues on a linked list, clean up on exit
-
 Add a way for a thread to install a run queue as its preferred one
 
 Run a fallback run queue in its own thread

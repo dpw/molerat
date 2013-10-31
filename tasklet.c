@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include "tasklet.h"
 
 void tasklet_init(struct tasklet *tasklet, struct mutex *mutex, void *data)
@@ -12,6 +14,9 @@ void tasklet_init(struct tasklet *tasklet, struct mutex *mutex, void *data)
 }
 
 struct run_queue {
+	/* Linked list of all run queues. */
+	struct run_queue *next;
+
 	struct mutex mutex;
 	struct tasklet *head;
 	struct tasklet *current;
@@ -24,7 +29,36 @@ struct run_queue {
 	struct cond cond;
 };
 
-struct run_queue *run_queue_create(void)
+/* Threads can hold a run_queue reference without holding any locks.
+   So run_queues cannot simply be freed.  At some stage it might be
+   worth introducing RCU-like grace periods to determine when
+   run_queues can be freed.  But for now, we don't expect many of them
+   to get allocated, so we simply clean them up on exit to keep
+   valgrind happy. */
+
+static struct run_queue *run_queues;
+
+static void run_queue_destroy(struct run_queue *runq)
+{
+	assert(!runq->head);
+	assert(!runq->current);
+	mutex_fini(&runq->mutex);
+	cond_fini(&runq->cond);
+	free(runq);
+}
+
+static void cleanup_run_queues(void)
+{
+	struct run_queue *runq = run_queues;
+
+	while (runq != NULL) {
+		struct run_queue *next = runq->next;
+		run_queue_destroy(runq);
+		runq = next;
+	}
+}
+
+static struct run_queue *run_queue_create_unlinked(void)
 {
 	struct run_queue *runq = xalloc(sizeof *runq);
 
@@ -37,24 +71,24 @@ struct run_queue *run_queue_create(void)
 	return runq;
 }
 
-void run_queue_destroy(struct run_queue *runq)
+static void add_to_run_queues(struct run_queue *runq)
 {
-	assert(!runq->head);
-	assert(!runq->current);
-	mutex_fini(&runq->mutex);
-	cond_fini(&runq->cond);
-	free(runq);
+	do
+		runq->next = run_queues;
+	while (!__sync_bool_compare_and_swap(&run_queues, runq->next, runq));
+
+	if (!runq->next)
+		atexit(cleanup_run_queues);
 }
 
+struct run_queue *run_queue_create(void)
+{
+	struct run_queue *runq = run_queue_create_unlinked();
+	add_to_run_queues(runq);
+	return runq;
+}
 
 static struct run_queue *default_run_queue;
-
-static void thread_run_queue_cleanup(void)
-{
-	struct run_queue *runq = default_run_queue;
-	if (runq)
-		run_queue_destroy(runq);
-}
 
 /* Not really a per-thread run-queue at the moment */
 static struct run_queue *thread_run_queue(void)
@@ -64,10 +98,10 @@ static struct run_queue *thread_run_queue(void)
 		if (runq)
 			return runq;
 
-		runq = run_queue_create();
+		runq = run_queue_create_unlinked();
 		if (__sync_bool_compare_and_swap(&default_run_queue, NULL,
 						 runq)) {
-			atexit(thread_run_queue_cleanup);
+			add_to_run_queues(runq);
 			return runq;
 		}
 

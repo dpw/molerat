@@ -1,14 +1,7 @@
-Add a way for a thread to install a run queue as its preferred one
-
-Run a fallback run queue in its own thread
-
-application_run should simply wait for application_stop to be
-called.
-
-restore SIGINT handling (main thread can handle this)
-
 Make polling thread a runqueue thread, so it doesn't get woken from
 poll so much.  Check that wakeups get reduced accordingly.
+
+restore SIGINT handling (main thread can handle this)
 
 thread API probably better pointer-based
 

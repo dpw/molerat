@@ -42,10 +42,13 @@ void test_tasklet_destroy(struct test_tasklet *tt)
 
 static void test_wait_list(void)
 {
+	struct run_queue *runq = run_queue_create();
 	int count = 3;
 	int i, total_got;
 	struct test_tasklet **tts = xalloc(count * sizeof *tts);
 	struct wait_list sema;
+
+	run_queue_target(runq);
 
 	wait_list_init(&sema, 0);
 
@@ -53,11 +56,11 @@ static void test_wait_list(void)
 		tts[i] = test_tasklet_create(&sema);
 
 	wait_list_broadcast(&sema);
-	run_queue_thread_run();
+	run_queue_run(runq, FALSE);
 
 	for (i = 0; i < count; i++) {
 		wait_list_up(&sema, 2);
-		run_queue_thread_run();
+		run_queue_run(runq, FALSE);
 	}
 
 	total_got = 0;
@@ -71,6 +74,7 @@ static void test_wait_list(void)
 
 	wait_list_fini(&sema);
 	free(tts);
+	run_queue_target(NULL);
 }
 
 /* Wait a millisecond */
@@ -83,43 +87,45 @@ static void delay(void)
 }
 
 struct trqw {
+	struct run_queue *runq;
+	bool_t ran;
+
 	struct mutex mutex;
 	struct tasklet tasklet;
-	bool_t *ran;
 };
 
 static void test_run_queue_waiting_done(void *v_t)
 {
 	struct trqw *t = v_t;
 
-	*t->ran = TRUE;
-
+	t->ran = TRUE;
 	tasklet_fini(&t->tasklet);
 	mutex_unlock_fini(&t->mutex);
-	free(t);
 }
 
-
-static void test_run_queue_waiting_thread(void *v_ran)
+static void test_run_queue_waiting_thread(void *v_t)
 {
-	struct trqw *t = xalloc(sizeof *t);
+	struct trqw *t = v_t;
 
 	mutex_init(&t->mutex);
 	tasklet_init(&t->tasklet, &t->mutex, t);
-	t->ran = v_ran;
 
+	run_queue_target(t->runq);
 	delay();
 	tasklet_later(&t->tasklet, test_run_queue_waiting_done);
 }
 
 static void test_run_queue_waiting(void)
 {
-	bool_t ran = FALSE;
 	struct thread thr;
+	struct trqw t;
 
-	thread_init(&thr, test_run_queue_waiting_thread, &ran);
-	run_queue_thread_run_waiting();
-	assert(ran);
+	t.runq = run_queue_create();
+	t.ran = FALSE;
+
+	thread_init(&thr, test_run_queue_waiting_thread, &t);
+	run_queue_run(t.runq, TRUE);
+	assert(t.ran);
 	thread_fini(&thr);
 }
 

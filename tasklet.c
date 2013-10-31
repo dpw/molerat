@@ -88,25 +88,88 @@ struct run_queue *run_queue_create(void)
 	return runq;
 }
 
-static struct run_queue *default_run_queue;
+/* A dedicated run_queue worker thread */
+struct worker {
+	struct run_queue *runq;
+	struct thread thread;
 
-/* Not really a per-thread run-queue at the moment */
+	/* Only used when we are stopping the worker */
+	struct mutex mutex;
+	struct tasklet tasklet;
+};
+
+static void worker_thread(void *v_worker);
+
+static struct worker *worker_create(struct run_queue *runq)
+{
+	struct worker *w = xalloc(sizeof *w);
+	w->runq = runq;
+	thread_init(&w->thread, worker_thread, w);
+	return w;
+}
+
+static void stop_worker(void *v_worker)
+{
+	struct worker *w = v_worker;
+	w->runq = NULL;
+	tasklet_stop(&w->tasklet);
+	mutex_unlock(&w->mutex);
+}
+
+static void worker_destroy(struct worker *w)
+{
+	mutex_init(&w->mutex);
+	tasklet_init(&w->tasklet, &w->mutex, w);
+	tasklet_later(&w->tasklet, stop_worker);
+	thread_fini(&w->thread);
+	mutex_lock(&w->mutex);
+	tasklet_fini(&w->tasklet);
+	mutex_unlock_fini(&w->mutex);
+	free(w);
+}
+
+static struct run_queue *default_run_queue;
+static struct worker *default_worker;
+
+static void cleanup_default_worker(void)
+{
+	worker_destroy(default_worker);
+}
+
+static __thread struct run_queue *tls_run_queue;
+
+void run_queue_target(struct run_queue *runq)
+{
+	tls_run_queue = runq;
+}
+
 static struct run_queue *thread_run_queue(void)
 {
+	struct run_queue *runq = tls_run_queue;
+	if (runq)
+		return runq;
+
 	for (;;) {
-		struct run_queue *runq = default_run_queue;
+		runq = default_run_queue;
 		if (runq)
 			return runq;
 
 		runq = run_queue_create_unlinked();
 		if (__sync_bool_compare_and_swap(&default_run_queue, NULL,
-						 runq)) {
-			add_to_run_queues(runq);
-			return runq;
-		}
+						 runq))
+			break;
 
 		run_queue_destroy(runq);
 	}
+
+	/* The order is important here - we want cleanup_run_queues to
+	   come after cleanup_default_worker. */
+	add_to_run_queues(runq);
+
+	default_worker = worker_create(runq);
+	atexit(cleanup_default_worker);
+
+	return runq;
 }
 
 static void run_queue_enqueue(struct run_queue *runq, struct tasklet *t)
@@ -420,7 +483,7 @@ bool_t wait_list_nonempty(struct wait_list *w)
 	return !!w->head;
 }
 
-void run_queue_run(struct run_queue *runq, bool_t wait)
+void run_queue_run(struct run_queue *runq, int wait)
 {
 	struct tasklet *t;
 
@@ -569,12 +632,15 @@ void tasklet_fini(struct tasklet *t)
 	mutex_fini(&t->wait_mutex);
 }
 
-void run_queue_thread_run(void)
+static void worker_thread(void *v_worker)
 {
-	run_queue_run(thread_run_queue(), FALSE);
-}
+	struct worker *w = v_worker;
 
-void run_queue_thread_run_waiting(void)
-{
-	run_queue_run(thread_run_queue(), TRUE);
+	for (;;) {
+		struct run_queue *runq = w->runq;
+		if (!runq)
+			break;
+
+		run_queue_run(runq, TRUE);
+	}
 }

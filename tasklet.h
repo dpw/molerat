@@ -29,6 +29,16 @@ struct wait_list {
 	int up_count;
 };
 
+struct run_queue *run_queue_create(void);
+
+/* Set the preferred run queue for this thread. */
+void run_queue_target(struct run_queue *runq);
+
+/* Service a run queue.  Returns once the run queue is drained.  If
+   'wait' is set, waits until tasklets arrive. */
+void run_queue_run(struct run_queue *runq, int wait);
+
+
 void tasklet_init(struct tasklet *tasklet, struct mutex *mutex,
 		  void *data);
 void tasklet_fini(struct tasklet *t);
@@ -57,8 +67,5 @@ bool_t wait_list_nonempty(struct wait_list *w);
 
 void wait_list_wait(struct wait_list *w, struct tasklet *t);
 void wait_list_broadcast(struct wait_list *w);
-
-void run_queue_thread_run(void);
-void run_queue_thread_run_waiting(void);
 
 #endif

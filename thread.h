@@ -28,6 +28,8 @@ struct cond {
 };
 
 
+#define MUTEX_INITIALIZER { SKINNY_MUTEX_INITIALIZER, FALSE, NULL }
+
 void mutex_init(struct mutex *m);
 void mutex_fini(struct mutex *m);
 void mutex_lock(struct mutex *m);

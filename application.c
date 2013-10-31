@@ -1,20 +1,37 @@
-#include "tasklet.h"
+#include <assert.h>
+
+#include "base.h"
+#include "thread.h"
 #include "application.h"
 
-static bool_t stop;
+struct mutex app_mutex = MUTEX_INITIALIZER;
+struct cond app_cond;
+enum { NONE, RUNNING, STOP } app_state;
 
 void application_run(void)
 {
-	stop = 0;
-	/* old_sigint = signal(SIGINT, sigint_handler); */
+	mutex_lock(&app_mutex);
+	assert(app_state == NONE);
+	app_state = RUNNING;
+	cond_init(&app_cond);
 
-	while (!stop)
-		run_queue_thread_run_waiting();
+	do
+		cond_wait(&app_cond, &app_mutex);
+	while (app_state == RUNNING);
 
-	/* signal(SIGINT, old_sigint); */
+	cond_fini(&app_cond);
+	app_state = NONE;
+	mutex_unlock(&app_mutex);
 }
 
 void application_stop(void)
 {
-	stop = 1;
+	mutex_lock(&app_mutex);
+
+	if (app_state == RUNNING) {
+		app_state = STOP;
+		cond_signal(&app_cond);
+	}
+
+	mutex_unlock(&app_mutex);
 }

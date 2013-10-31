@@ -7,6 +7,15 @@
 #include "skinny-mutex/skinny_mutex.h"
 #include "base.h"
 
+struct thread {
+	pthread_t id;
+	void *init;
+};
+
+void thread_init(struct thread *thr, void (*func)(void *data), void *data);
+void thread_fini(struct thread *thr);
+
+
 struct mutex {
 	skinny_mutex_t mutex;
 	bool_t held;

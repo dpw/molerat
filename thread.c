@@ -12,6 +12,36 @@ static void check_pthread_res(const char *where, int res)
 	abort();
 }
 
+struct thread_params {
+	void (*func)(void *data);
+	void *data;
+};
+
+static void *thread_trampoline(void *v_params)
+{
+	struct thread_params params = *(struct thread_params *)v_params;
+	free(v_params);
+	params.func(params.data);
+	return NULL;
+}
+
+void thread_init(struct thread *thr, void (*func)(void *data), void *data)
+{
+	struct thread_params *params = xalloc(sizeof *params);
+	params->func = func;
+	params->data = data;
+	check_pthread_res("pthread_create",
+			  pthread_create(&thr->id, NULL,
+					 thread_trampoline, params));
+	thr->init = xalloc(1);
+}
+
+void thread_fini(struct thread *thr)
+{
+	check_pthread_res("pthread_join", pthread_join(thr->id, NULL));
+	free(thr->init);
+}
+
 void mutex_init(struct mutex *m)
 {
         check_pthread_res("skinny_mutex_init",
@@ -30,7 +60,6 @@ void mutex_fini(struct mutex *m)
 
 void mutex_lock(struct mutex *m)
 {
-	assert(!m->held);
         check_pthread_res("skinny_mutex_lock",
                           skinny_mutex_lock(&m->mutex));
 	m->held = TRUE;
@@ -86,8 +115,10 @@ void cond_fini(struct cond *c)
 void cond_wait(struct cond *c, struct mutex *m)
 {
 	mutex_assert_held(m);
+	m->held = FALSE;
 	check_pthread_res("skinny_mutex_cond_wait",
 			  skinny_mutex_cond_wait(&c->cond, &m->mutex));
+	m->held = TRUE;
 }
 
 void cond_signal(struct cond *c)

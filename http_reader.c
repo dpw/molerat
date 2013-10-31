@@ -105,7 +105,7 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 	for (;;) {
 		/* Read some data from the socket */
 
-		/* XXX we should unsure that the prebody buffer
+		/* XXX we should ensure that the prebody buffer
 		   doesn't grow beyond INT_MAX, as we store offsets
 		   into it as ints. */
 

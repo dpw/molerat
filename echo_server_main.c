@@ -38,7 +38,7 @@ int main(int argc, char **argv)
 	if (!es)
 		goto out;
 
-	socket_factory_run(sf, &err);
+	socket_factory_run(&err);
 	echo_server_destroy(es);
 
  out:

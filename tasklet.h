@@ -44,7 +44,6 @@ static inline void tasklet_now(struct tasklet *t, void (*handler)(void *))
 
 static inline void tasklet_later(struct tasklet *t, void (*handler)(void *))
 {
-	mutex_assert_held(t->mutex);
 	t->handler = handler;
 	tasklet_run(t);
 }

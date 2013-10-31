@@ -180,9 +180,7 @@ static struct connection *connection_create(struct http_server *server,
 	conn->write_buf = NULL;
 	add_connection(server, conn);
 
-	mutex_lock(&conn->mutex);
 	tasklet_later(&conn->tasklet, connection_read_prebody);
-	mutex_unlock(&conn->mutex);
 
 	return conn;
 }

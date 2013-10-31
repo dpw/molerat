@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <unistd.h>
-#include <poll.h>
 #include <fcntl.h>
 #include <string.h>
 #include <stdio.h>
@@ -12,6 +11,7 @@
 
 #include "socket.h"
 #include "tasklet.h"
+#include "poll.h"
 
 static int blocked(void)
 {
@@ -161,367 +161,139 @@ void free_sockaddrs(struct sockaddr **addrs)
 }
 
 
-struct simple_socket_factory {
-	struct socket_factory base;
-	struct mutex mutex;
-
-	/* pollfs is the array of pollfds that gets passed to poll(2).
-	 *
-	 * We don't want to modify pollfds while poll is being called,
-	 * or while the events are being dispatched (which gets
-	 * complicated if pollfd entries are moving around).  Instead,
-	 * updates to pollfds are gathered in pollfd_updates, and
-	 * pollfds only gets modified within apply_updates.
-	 *
-	 * pollfd_sockets records the sockets corresponding to pollfds
-	 * entries.
-	 */
-	struct pollfd *pollfds;
-	struct common_socket **pollfd_sockets;
-	unsigned int pollfds_size;
-	unsigned int pollfds_used;
-
-	struct pollfd_update *pollfd_updates;
-	unsigned int pollfd_updates_size;
-	unsigned int pollfd_updates_used;
-};
-
-struct common_socket {
-	struct socket base;
-	int fd;
-
-	/* The sign of slot indicates what it refers to:
-	 *
-	 * >0: There is an entry in pollfds for the socket, at
-	 * pollfds[slot-1].
-	 *
-	 * <0: There is an entry in pollfd_updates for the socket, at
-	 * pollfds[~slot].  There may or may not be a pollfd entry
-	 * too.
-	 *
-	 * 0: There is no pollfd or pollfd_update for this socket.
-	 */
-	int slot;
-};
-
-struct pollfd_update {
-	/* The index of the entry in pollfds to which this update
-	   applies, or -1 if it is new. */
-	int poll_slot;
-	short events;
-	struct common_socket *socket;
-};
-
-
-static void common_socket_init(struct common_socket *s,
-			       struct socket_ops *ops, int fd)
-{
-	s->base.ops = ops;
-	s->fd = fd;
-	s->slot = 0;
-}
-
-static void common_socket_close(struct common_socket *s, struct error *e)
-{
-	int fd = s->fd;
-	s->fd = -1;
-
-	if (fd >= 0 && close(fd) < 0)
-		error_errno(e, "close");
-}
-
-static void common_socket_fini(struct common_socket *s,
-			       struct simple_socket_factory *f)
-{
-	mutex_assert_held(&f->mutex);
-
-	/* Clear any pointers to this socket */
-	if (s->slot < 0) {
-		struct pollfd_update *u = &f->pollfd_updates[~s->slot];
-		assert(u->events == 0);
-		u->socket = NULL;
-		if (u->poll_slot >= 0)
-			f->pollfd_sockets[u->poll_slot] = NULL;
-	}
-	else if (s->slot > 0) {
-		f->pollfd_sockets[s->slot - 1] = NULL;
-	}
-}
-
-static struct socket_factory_ops simple_socket_factory_ops;
-
-static struct socket_factory *socket_factory_create(void)
-{
-	struct simple_socket_factory *f = xalloc(sizeof *f);
-	f->base.ops = &simple_socket_factory_ops;
-	mutex_init(&f->mutex);
-
-	f->pollfds = NULL;
-	f->pollfd_sockets = NULL;
-	f->pollfds_size = f->pollfds_used = 0;
-
-	f->pollfd_updates = NULL;
-	f->pollfd_updates_size = f->pollfd_updates_used = 0;
-
-	return &f->base;
-}
-
-static void socket_factory_destroy(struct socket_factory *gf)
-{
-	struct simple_socket_factory *f = (struct simple_socket_factory *)gf;
-	assert(gf->ops == &simple_socket_factory_ops);
-
-	mutex_fini(&f->mutex);
-	free(f->pollfds);
-	free(f->pollfd_sockets);
-	free(f->pollfd_updates);
-	free(f);
-}
-
-static void set_events(struct simple_socket_factory *f,
-		       struct common_socket *s, short events)
-{
-	mutex_assert_held(&f->mutex);
-
-	if (s->slot >= 0) {
-		/* Allocate a new update slot */
-		int slot = f->pollfd_updates_used++;
-		int sz = f->pollfd_updates_size;
-		struct pollfd_update *update;
-
-		if (slot == sz) {
-			/* Grow pollfd_updates */
-			f->pollfd_updates_size = sz = sz * 2 + 10;
-			f->pollfd_updates = xrealloc(f->pollfd_updates,
-					     sz * sizeof(struct pollfd_update));
-		}
-
-		update = &f->pollfd_updates[slot];
-		update->poll_slot = s->slot - 1;
-		update->events = events;
-		update->socket = s;
-		s->slot = ~slot;
-	}
-	else {
-		/* Update the existing update slot */
-		f->pollfd_updates[~s->slot].events = events;
-	}
-}
-
-static void add_pollfd(struct simple_socket_factory *f,
-		       struct common_socket *s, short events)
-{
-	int slot = f->pollfds_used++;
-	int sz = f->pollfds_size;
-
-	mutex_assert_held(&f->mutex);
-
-	if (slot == sz) {
-		/* Grow pollfds */
-		f->pollfds_size = sz = sz * 2 + 10;
-		f->pollfds = xrealloc(f->pollfds, sz * sizeof(struct pollfd));
-		f->pollfd_sockets = xrealloc(f->pollfd_sockets,
-					  sz * sizeof(struct common_socket *));
-	}
-
-	f->pollfds[slot].fd = s->fd;
-	f->pollfds[slot].events = events;
-	f->pollfd_sockets[slot] = s;
-	s->slot = slot + 1;
-}
-
-static void delete_pollfd(struct simple_socket_factory *f, int slot)
-{
-	int fd;
-
-	mutex_assert_held(&f->mutex);
-
-	/* Copy the last pollfd over the one to be deleted */
-	f->pollfds_used--;
-	f->pollfds[slot] = f->pollfds[f->pollfds_used];
-	f->pollfd_sockets[slot] = f->pollfd_sockets[f->pollfds_used];
-
-	/* Now fix up the slot reference, which could be in the
-	   common_socket or in the pollfd_update */
-	fd = f->pollfds[slot].fd;
-	if (fd >= 0)
-		f->pollfd_sockets[slot]->slot = slot + 1;
-	else
-		f->pollfd_updates[~fd].poll_slot = slot;
-}
-
-static void apply_updates(struct simple_socket_factory *f)
-{
-	int i;
-
-	mutex_assert_held(&f->mutex);
-
-	/* We abuse the 'fd' field in pollfds during the update:
-	 * Because we can shuffle the entries in f->pollfds below, we
-	 * need to keep the 'slot' fields in the pollfd_updates in
-	 * sync.  But that requires acess to the pollfd_update entry
-	 * given a pollfd.  We use negative values in the 'fd' to
-	 * provide that path. */
-	for (i = 0; i < f->pollfd_updates_used; i++) {
-		int poll_slot = f->pollfd_updates[i].poll_slot;
-		if (poll_slot >= 0)
-			f->pollfds[poll_slot].fd = ~i;
-	}
-
-	for (i = 0; i < f->pollfd_updates_used; i++) {
-		struct pollfd_update *u = &f->pollfd_updates[i];
-		if (u->poll_slot >= 0) {
-			/* The case where a pollfd exists for this socket */
-			if (u->events) {
-				struct pollfd *pollfd
-					= &f->pollfds[u->poll_slot];
-				pollfd->events = u->events;
-				pollfd->fd = u->socket->fd;
-				u->socket->slot = u->poll_slot + 1;
-			}
-			else {
-				delete_pollfd(f, u->poll_slot);
-				if (u->socket)
-					u->socket->slot = 0;
-			}
-		}
-		else if (u->events) {
-			/* The is no existing pollfd for this socket.
-			   If the events is zero, we don't need to do
-			   anything at all. */
-			add_pollfd(f, u->socket, u->events);
-		}
-
-	}
-
-	f->pollfd_updates_used = 0;
-}
-
 struct simple_socket {
-	struct common_socket common;
-	struct simple_socket_factory *factory;
+	struct socket base;
+	struct mutex mutex;
 	struct wait_list reading;
 	struct wait_list writing;
-	short events;
+	struct watched_fd watched_fd;
 };
 
 static struct socket_ops simple_socket_ops;
 
-static void simple_socket_init(struct simple_socket *s,
-			       struct socket_ops *ops,
-			       struct simple_socket_factory *f,
-			       int fd)
+static short simple_socket_handle_events(void *v_s, short got, short interest)
 {
-	common_socket_init(&s->common, ops, fd);
-	s->factory = f;
+	struct simple_socket *s = v_s;
+
+	if (got & POLLIN) {
+		wait_list_broadcast(&s->reading);
+		interest &= ~POLLIN;
+	}
+
+	if (got & POLLOUT) {
+		wait_list_broadcast(&s->writing);
+		interest &= ~POLLOUT;
+	}
+
+	return interest;
+}
+
+static void simple_socket_init(struct simple_socket *s,
+			       struct socket_ops *ops, int fd)
+{
+	s->base.ops = ops;
+	mutex_init(&s->mutex);
 	wait_list_init(&s->reading, 0);
 	wait_list_init(&s->writing, 0);
-	s->events = 0;
+
+	if (fd >= 0)
+		watched_fd_init(&s->watched_fd, poll_singleton(), fd,
+				simple_socket_handle_events, s);
+	else
+		s->watched_fd.fd = -1;
 }
 
-static struct socket *simple_socket_create(struct simple_socket_factory *f,
-					   int fd)
+static struct socket *simple_socket_create(int fd)
 {
 	struct simple_socket *s = xalloc(sizeof *s);
-	simple_socket_init(s, &simple_socket_ops, f, fd);
-	return &s->common.base;
-}
-
-static void simple_socket_close_locked(struct simple_socket *s,
-				       struct error *e)
-{
-	s->events = 0;
-	set_events(s->factory, &s->common, 0);
-	common_socket_close(&s->common, e);
-}
-
-static void simple_socket_close(struct socket *gs, struct error *e)
-{
-	struct simple_socket *s = (struct simple_socket *)gs;
-	assert(gs->ops == &simple_socket_ops);
-
-	mutex_lock(&s->factory->mutex);
-	simple_socket_close_locked(s, e);
-	mutex_unlock(&s->factory->mutex);
+	simple_socket_init(s, &simple_socket_ops, fd);
+	return &s->base;
 }
 
 static void simple_socket_fini(struct simple_socket *s)
 {
-	mutex_assert_held(&s->factory->mutex);
-
-	if (s->common.fd >= 0) {
-		struct error err;
-		error_init(&err);
-		simple_socket_close_locked(s, &err);
-		error_fini(&err);
+	int fd = s->watched_fd.fd;
+	if (fd >= 0) {
+		watched_fd_fini(&s->watched_fd);
+		close(fd);
 	}
 
-	common_socket_fini(&s->common, s->factory);
 	wait_list_fini(&s->reading);
 	wait_list_fini(&s->writing);
+	mutex_unlock_fini(&s->mutex);
 }
 
 static void simple_socket_destroy(struct socket *gs)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
 	assert(gs->ops == &simple_socket_ops);
-	mutex_lock(&s->factory->mutex);
+	mutex_lock(&s->mutex);
 	simple_socket_fini(s);
-	mutex_unlock(&s->factory->mutex);
 	free(s);
 }
 
-static void simple_socket_handle_events(struct socket *gs, short events)
+static void simple_socket_close_locked(struct simple_socket *s,
+				       struct error *e)
+{
+	int fd = s->watched_fd.fd;
+	if (fd >= 0) {
+		watched_fd_fini(&s->watched_fd);
+		if (close(fd) < 0)
+			error_errno(e, "close");
+	}
+}
+
+static void simple_socket_close(struct socket *gs, struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
+	assert(gs->ops == &simple_socket_ops);
+	mutex_lock(&s->mutex);
+	simple_socket_close_locked(s, e);
+	mutex_unlock(&s->mutex);
+}
 
-	if (events & POLLIN) {
-		wait_list_broadcast(&s->reading);
-		s->events &= ~POLLIN;
-	}
+static void simple_socket_wake_all(struct simple_socket *s)
+{
+	wait_list_broadcast(&s->reading);
+	wait_list_broadcast(&s->writing);
+}
 
-	if (events & POLLOUT) {
-		wait_list_broadcast(&s->writing);
-		s->events &= ~POLLOUT;
-	}
+static void simple_socket_set_fd(struct simple_socket *s, int fd)
+{
+	assert(s->watched_fd.fd < 0);
+	assert(fd >= 0);
 
-
-	set_events(s->factory, &s->common, s->events);
+	watched_fd_init(&s->watched_fd, poll_singleton(), fd,
+			simple_socket_handle_events, s);
+	simple_socket_wake_all(s);
 }
 
 static struct sockaddr *simple_socket_address(struct socket *gs,
 					      struct error *err)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
-	return get_socket_address(s->common.fd, err);
+	return get_socket_address(s->watched_fd.fd, err);
 }
 
 static struct sockaddr *simple_socket_peer_address(struct socket *gs,
 						   struct error *err)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
-	return get_socket_peer_address(s->common.fd, err);
-}
-
-static void simple_socket_blocked_read(struct simple_socket *s,
-				       struct tasklet *t)
-{
-	mutex_assert_held(&s->factory->mutex);
-	wait_list_wait(&s->reading, t);
+	return get_socket_peer_address(s->watched_fd.fd, err);
 }
 
 static ssize_t simple_socket_read_locked(struct simple_socket *s,
 					 void *buf, size_t len,
 					 struct tasklet *t, struct error *e)
 {
-	if (s->common.fd >= 0) {
-		ssize_t res = read(s->common.fd, buf, len);
+	if (s->watched_fd.fd >= 0) {
+		ssize_t res = read(s->watched_fd.fd, buf, len);
 		if (res >= 0)
 			return res;
 
 		if (blocked()) {
-			simple_socket_blocked_read(s, t);
-			set_events(s->factory, &s->common, s->events |= POLLIN);
+			wait_list_wait(&s->reading, t);
+			watched_fd_set_interest(&s->watched_fd, POLLIN);
 		}
 		else {
 			error_errno(e, "read");
@@ -542,33 +314,24 @@ static ssize_t simple_socket_read(struct socket *gs, void *buf, size_t len,
 	ssize_t res;
 	assert(gs->ops == &simple_socket_ops);
 
-	mutex_lock(&s->factory->mutex);
+	mutex_lock(&s->mutex);
 	res = simple_socket_read_locked(s, buf, len, t, e);
-	mutex_unlock(&s->factory->mutex);
+	mutex_unlock(&s->mutex);
 	return res;
-}
-
-
-static void simple_socket_blocked_write(struct simple_socket *s,
-					struct tasklet *t)
-{
-	mutex_assert_held(&s->factory->mutex);
-	wait_list_wait(&s->writing, t);
 }
 
 static ssize_t simple_socket_write_locked(struct simple_socket *s,
 					  void *buf, size_t len,
 					  struct tasklet *t, struct error *e)
 {
-	if (s->common.fd >= 0) {
-		ssize_t res = write(s->common.fd, buf, len);
+	if (s->watched_fd.fd >= 0) {
+		ssize_t res = write(s->watched_fd.fd, buf, len);
 		if (res >= 0)
 			return res;
 
 		if (blocked()) {
-			simple_socket_blocked_write(s, t);
-			set_events(s->factory, &s->common,
-				   s->events |= POLLOUT);
+			wait_list_wait(&s->writing, t);
+			watched_fd_set_interest(&s->watched_fd, POLLOUT);
 		}
 		else {
 			error_errno(e, "write");
@@ -589,9 +352,9 @@ static ssize_t simple_socket_write(struct socket *gs, void *buf, size_t len,
 	ssize_t res;
 	assert(gs->ops == &simple_socket_ops);
 
-	mutex_lock(&s->factory->mutex);
+	mutex_lock(&s->mutex);
 	res = simple_socket_write_locked(s, buf, len, t, e);
-	mutex_unlock(&s->factory->mutex);
+	mutex_unlock(&s->mutex);
 	return res;
 }
 
@@ -615,30 +378,15 @@ static void simple_socket_partial_close(struct socket *gs,
 		how = SHUT_RD;
 	}
 
-	mutex_lock(&s->factory->mutex);
+	mutex_lock(&s->mutex);
 
-	if (shutdown(s->common.fd, how) < 0)
+	if (shutdown(s->watched_fd.fd, how) < 0)
 		error_errno(e, "shutdown");
 
-	mutex_unlock(&s->factory->mutex);
-}
-
-static void simple_socket_wake_all(struct simple_socket *s)
-{
-	mutex_assert_held(&s->factory->mutex);
-	wait_list_broadcast(&s->reading);
-	wait_list_broadcast(&s->writing);
-}
-
-static void simple_socket_set_fd(struct simple_socket *s, int fd)
-{
-	assert(s->common.fd < 0);
-	s->common.fd = fd;
-	simple_socket_wake_all(s);
+	mutex_unlock(&s->mutex);
 }
 
 static struct socket_ops simple_socket_ops = {
-	simple_socket_handle_events,
 	simple_socket_read,
 	simple_socket_write,
 	simple_socket_address,
@@ -649,9 +397,14 @@ static struct socket_ops simple_socket_ops = {
 };
 
 
+/* The connector is responsible for trying addresses until it
+   successfully opens a socket, and then supplying it to the
+   client_socket. */
 struct connector {
-	struct common_socket common;
-	struct client_socket *parent;
+	struct client_socket *socket;
+
+	struct tasklet tasklet;
+	struct watched_fd watched_fd;
 	struct addrinfo *next_addrinfo;
 	struct addrinfo *addrinfos;
 	struct error err;
@@ -662,134 +415,153 @@ struct client_socket {
 	struct connector *connector;
 };
 
-static struct client_socket *client_socket_create(
-					       struct simple_socket_factory *f,
-					       struct connector *c);
+static struct socket_ops client_socket_ops;
 
-static struct socket_ops connector_common_ops;
+static short connector_handle_events(void *v_c, short got, short interest);
+static void connector_connect(void *v_c);
+static void connector_connected(void *v_c);
+static void connector_error(void *v_c);
 
-static struct connector *connector_create(struct simple_socket_factory *f,
-					  struct addrinfo *next_addrinfo,
+static struct connector *connector_create(struct addrinfo *next_addrinfo,
 					  struct addrinfo *addrinfos)
 {
-	struct connector *c;
+	struct connector *c = xalloc(sizeof *c);
+	struct client_socket *s = xalloc(sizeof *s);
 
-	c = xalloc(sizeof *c);
-	c->parent = client_socket_create(f, c);
+	c->socket = s;
+
+	tasklet_init(&c->tasklet, &s->base.mutex, c);
+	c->watched_fd.fd = -1;
 	c->next_addrinfo = next_addrinfo;
 	c->addrinfos = addrinfos;
 	error_init(&c->err);
-	common_socket_init(&c->common, &connector_common_ops, -1);
+
+	simple_socket_init(&s->base, &client_socket_ops, -1);
+	s->connector = c;
+
+	/* Start connecting */
+	mutex_lock(&s->base.mutex);
+	tasklet_now(&c->tasklet, connector_connect);
 
 	return c;
 }
 
-static void connector_close(struct connector *c, struct error *err)
-{
-	struct simple_socket_factory *f = c->parent->base.factory;
-	mutex_assert_held(&f->mutex);
-	set_events(f, &c->common, 0);
-	common_socket_close(&c->common, err);
-}
-
 static void connector_destroy(struct connector *c)
 {
-	struct simple_socket_factory *f = c->parent->base.factory;
-	mutex_assert_held(&f->mutex);
-
-	if (c->common.fd >= 0) {
-		struct error err;
-		error_init(&err);
-		connector_close(c, &err);
-		error_fini(&err);
+	int fd = c->watched_fd.fd;
+	if (fd >= 0) {
+		watched_fd_fini(&c->watched_fd);
+		close(fd);
 	}
 
-	common_socket_fini(&c->common, f);
+	tasklet_fini(&c->tasklet);
+	error_fini(&c->err);
 
 	if (c->addrinfos)
 		freeaddrinfo(c->addrinfos);
 
-	error_fini(&c->err);
 	free(c);
 }
 
-static void connector_connected(struct connector *c)
+static void connector_connect(void *v_c)
 {
-	struct simple_socket_factory *f = c->parent->base.factory;
-	mutex_assert_held(&f->mutex);
-	set_events(f, &c->common, 0);
-	simple_socket_set_fd(&c->parent->base, c->common.fd);
-	c->parent->connector = NULL;
-
-	c->common.fd = -1;
-	connector_destroy(c);
-}
-
-static void connector_connect(struct connector *c)
-{
-	struct simple_socket_factory *f = c->parent->base.factory;
-	mutex_assert_held(&f->mutex);
+	struct connector *c = v_c;
 
 	for (;;) {
-		struct addrinfo *ai = c->next_addrinfo;
-		if (!ai) {
-			/* Ran out of addresses to try, so we are
-			   done. We should have an error to report. */
-			assert(!error_ok(&c->err));
-			set_events(f, &c->common, 0);
-			simple_socket_wake_all(&c->parent->base);
-			break;
-		}
-
-		c->next_addrinfo = ai->ai_next;
+		struct addrinfo *ai;
 
 		/* If we have an existing connecting socket, dispose of it. */
-		if (c->common.fd >= 0)
-			common_socket_close(&c->common, &c->err);
+		int fd = c->watched_fd.fd;
+		if (fd >= 0) {
+			watched_fd_fini(&c->watched_fd);
+			close(fd);
+		}
 
+		ai = c->next_addrinfo;
+		if (!ai)
+			break;
+
+		c->next_addrinfo = ai->ai_next;
 		error_reset(&c->err);
-		c->common.fd = make_socket(ai->ai_family, ai->ai_socktype,
-					   &c->err);
-		if (c->common.fd < 0)
+		fd = make_socket(ai->ai_family, ai->ai_socktype, &c->err);
+		if (fd < 0)
 			continue;
 
-		if (connect(c->common.fd, ai->ai_addr, ai->ai_addrlen) >= 0) {
+		watched_fd_init(&c->watched_fd, poll_singleton(), fd,
+				connector_handle_events, c);
+		if (connect(fd, ai->ai_addr, ai->ai_addrlen) >= 0) {
 			/* Immediately connected.  Can this actually
-			 * happen?  Handle it anyway. */
-			connector_connected(c);
-			break;
+			 * happen? */
+			tasklet_now(&c->tasklet, connector_connected);
+			goto out;
 		}
 		else if (blocked()) {
 			/* Writeability will indicate that the connection has
 			 * been established. */
-			set_events(f, &c->common, POLLOUT);
-			break;
+			watched_fd_set_interest(&c->watched_fd, POLLOUT);
+			goto out;
 		}
 		else {
 			error_errno(&c->err, "connect");
 		}
 	}
+
+	/* Ran out of addresses to try, so we are done. We should have
+	   an error to report. */
+	assert(!error_ok(&c->err));
+	simple_socket_wake_all(&c->socket->base);
+
+ out:
+	tasklet_stop(&c->tasklet);
+	mutex_unlock(&c->socket->base.mutex);
 }
 
-static void connector_handle_events(struct socket *gs, short events)
+static short connector_handle_events(void *v_c, short got, short interest)
 {
-	struct connector *c = (struct connector *)gs;
-	assert(gs->ops == &connector_common_ops);
+	struct connector *c = v_c;
 
-	if (events & POLLERR) {
-		int e;
-		socklen_t len = sizeof e;
-		getsockopt(c->common.fd, SOL_SOCKET, SO_ERROR, &e, &len);
-		if (e) {
-			/* Stash the error and try another address */
-			error_errno_val(&c->err, e, "connect");
-			connector_connect(c);
-			return;
-		}
+	if (got & POLLERR) {
+		tasklet_later(&c->tasklet, connector_error);
+		interest = 0;
+	}
+	else if (got & POLLOUT) {
+		tasklet_later(&c->tasklet, connector_connected);
+		interest = 0;
 	}
 
-	if (events & POLLOUT) {
-		connector_connected(c);
+	return interest;
+}
+
+static void connector_connected(void *v_c)
+{
+	struct connector *c = v_c;
+	struct client_socket *s = c->socket;
+	int fd = c->watched_fd.fd;
+
+	watched_fd_fini(&c->watched_fd);
+	connector_destroy(c);
+	s->connector = NULL;
+	simple_socket_set_fd(&s->base, fd);
+	mutex_unlock(&s->base.mutex);
+}
+
+static void connector_error(void *v_c)
+{
+	struct connector *c = v_c;
+	int e;
+	socklen_t len = sizeof e;
+
+	assert(!getsockopt(c->watched_fd.fd, SOL_SOCKET, SO_ERROR, &e, &len));
+	if (e) {
+		/* Stash the error and try another address */
+		error_errno_val(&c->err, e, "connect");
+		tasklet_now(&c->tasklet, connector_connect);
+	}
+	else {
+		/* Hmmm, no error.  Continue to wait. */
+		tasklet_stop(&c->tasklet);
+		watched_fd_set_interest(&c->watched_fd, POLLOUT);
+		mutex_unlock(&c->socket->base.mutex);
 	}
 }
 
@@ -804,35 +576,22 @@ static bool_t connector_ok(struct connector *c, struct error *err)
 	return 0;
 }
 
-static struct socket_ops connector_common_ops = {
-	connector_handle_events
-};
-
-static struct socket_ops client_socket_ops;
-
-static struct client_socket *client_socket_create(
-					       struct simple_socket_factory *f,
-					       struct connector *c)
-{
-	struct client_socket *s = xalloc(sizeof *s);
-	simple_socket_init(&s->base, &client_socket_ops, f, -1);
-	s->connector = c;
-	return s;
-}
-
 static void client_socket_close(struct socket *gs, struct error *e)
 {
 	struct client_socket *s = (struct client_socket *)gs;
 	assert(gs->ops == &client_socket_ops);
 
-	mutex_lock(&s->base.factory->mutex);
+	mutex_lock(&s->base.mutex);
 
-	if (!s->connector)
+	if (!s->connector) {
 		simple_socket_close_locked(&s->base, e);
-	else
-		connector_close(s->connector, e);
+	}
+	else {
+		connector_destroy(s->connector);
+		s->connector = NULL;
+	}
 
-	mutex_unlock(&s->base.factory->mutex);
+	mutex_unlock(&s->base.mutex);
 }
 
 static void client_socket_destroy(struct socket *gs)
@@ -840,13 +599,12 @@ static void client_socket_destroy(struct socket *gs)
 	struct client_socket *s = (struct client_socket *)gs;
 	assert(gs->ops == &client_socket_ops);
 
-	mutex_lock(&s->base.factory->mutex);
+	mutex_lock(&s->base.mutex);
 
 	if (s->connector)
 		connector_destroy(s->connector);
 
 	simple_socket_fini(&s->base);
-	mutex_unlock(&s->base.factory->mutex);
 	free(s);
 }
 
@@ -857,19 +615,19 @@ static ssize_t client_socket_read(struct socket *gs, void *buf, size_t len,
 	ssize_t res;
 	assert(gs->ops == &client_socket_ops);
 
-	mutex_lock(&s->base.factory->mutex);
+	mutex_lock(&s->base.mutex);
 
 	if (!s->connector) {
 		res = simple_socket_read_locked(&s->base, buf, len, t, e);
 	}
 	else {
 		if (connector_ok(s->connector, e))
-			simple_socket_blocked_read(&s->base, t);
+			wait_list_wait(&s->base.reading, t);
 
 		res = -1;
 	}
 
-	mutex_unlock(&s->base.factory->mutex);
+	mutex_unlock(&s->base.mutex);
 	return res;
 }
 
@@ -880,24 +638,23 @@ static ssize_t client_socket_write(struct socket *gs, void *buf, size_t len,
 	ssize_t res;
 	assert(gs->ops == &client_socket_ops);
 
-	mutex_lock(&s->base.factory->mutex);
+	mutex_lock(&s->base.mutex);
 
 	if (!s->connector) {
 		res = simple_socket_write_locked(&s->base, buf, len, t, e);
 	}
 	else {
 		if (connector_ok(s->connector, e))
-			simple_socket_blocked_write(&s->base, t);
+			wait_list_wait(&s->base.writing, t);
 
 		res = -1;
 	}
 
-	mutex_unlock(&s->base.factory->mutex);
+	mutex_unlock(&s->base.mutex);
 	return res;
 }
 
 static struct socket_ops client_socket_ops = {
-	simple_socket_handle_events,
 	client_socket_read,
 	client_socket_write,
 	simple_socket_address,
@@ -910,49 +667,94 @@ static struct socket_ops client_socket_ops = {
 
 
 
-struct accepting_socket {
-	struct common_socket common;
-	struct simple_server_socket *parent;
-};
-
 struct simple_server_socket {
 	struct server_socket base;
-	struct simple_socket_factory *factory;
+	struct mutex mutex;
 	struct wait_list accepting;
 
 	/* The accepting sockets */
-	struct accepting_socket *sockets;
-
-	unsigned int n_sockets;
+	struct watched_fd *fds;
+	int n_fds;
 };
 
 static struct server_socket_ops simple_server_socket_ops;
-static struct socket_ops accepting_socket_ops;
 
-static struct simple_server_socket *simple_server_socket_create(
-						struct simple_socket_factory *f,
-						int *socket_fds,
-						unsigned int n_sockets)
+static short accept_handle_events(void *v_s, short got, short interest)
 {
-	unsigned int i;
-	struct simple_server_socket *s;
+	struct simple_server_socket *s = v_s;
+	wait_list_broadcast(&s->accepting);
+	return 0;
+}
 
-	s = xalloc(sizeof *s);
+static struct simple_server_socket *simple_server_socket_create(int *fds,
+								int n_fds)
+{
+	int i;
+
+	struct simple_server_socket *s = xalloc(sizeof *s);
 	s->base.ops = &simple_server_socket_ops;
-	s->factory = f;
+	mutex_init(&s->mutex);
 	wait_list_init(&s->accepting, 0);
-	s->n_sockets = n_sockets;
+	s->n_fds = n_fds;
 
-	/* Wrap the socket fds in listening_socket structs */
-	s->sockets = xalloc(n_sockets * sizeof *s->sockets);
-	for (i = 0; i < n_sockets; i++) {
-		s->sockets[i].parent = s;
-		common_socket_init(&s->sockets[i].common,
-				   &accepting_socket_ops,
-				   socket_fds[i]);
-	}
+	s->fds = xalloc(n_fds * sizeof *s->fds);
+	for (i = 0; i < n_fds; i++)
+		watched_fd_init(&s->fds[i], poll_singleton(), fds[i],
+				accept_handle_events, s);
 
 	return s;
+}
+
+static void simple_server_socket_close_locked(struct simple_server_socket *s,
+					      struct error *e)
+{
+	int i;
+
+	for (i = 0; i < s->n_fds; i++) {
+		int fd = s->fds[i].fd;
+		if (fd >= 0) {
+			watched_fd_fini(&s->fds[i]);
+			if (close(fd) < 0)
+				error_errno(e, "close");
+		}
+	}
+
+	free(s->fds);
+	s->fds = NULL;
+}
+
+static void simple_server_socket_close(struct server_socket *gs,
+				       struct error *e)
+{
+	struct simple_server_socket *s = (struct simple_server_socket *)gs;
+	assert(gs->ops == &simple_server_socket_ops);
+	mutex_lock(&s->mutex);
+	simple_server_socket_close_locked(s, e);
+	mutex_unlock(&s->mutex);
+}
+
+static void simple_server_socket_destroy(struct server_socket *gs)
+{
+	int i;
+	struct simple_server_socket *s = (struct simple_server_socket *)gs;
+	assert(gs->ops == &simple_server_socket_ops);
+
+	mutex_lock(&s->mutex);
+
+	if (s->fds) {
+		for (i = 0; i < s->n_fds; i++) {
+			int fd = s->fds[i].fd;
+			if (fd >= 0) {
+				watched_fd_fini(&s->fds[i]);
+				close(fd);
+			}
+		}
+	}
+
+	free(s->fds);
+	wait_list_fini(&s->accepting);
+	mutex_unlock_fini(&s->mutex);
+	free(s);
 }
 
 static struct socket *simple_server_socket_accept(struct server_socket *gs,
@@ -960,21 +762,20 @@ static struct socket *simple_server_socket_accept(struct server_socket *gs,
 						  struct error *e)
 {
 	int fd;
-	unsigned int i;
+	int i;
 	struct socket *res = NULL;
 	struct simple_server_socket *s = (struct simple_server_socket *)gs;
 	assert(gs->ops == &simple_server_socket_ops);
 
-	mutex_lock(&s->factory->mutex);
+	mutex_lock(&s->mutex);
 
-	/* Go through the accepting sockets for one that yields a
-	   connected socket.  This means we do some spurious accept
-	   calls.  It would be better to hang a tasklet off each
-	   accepting_socket and queue the accepted fds in userspace.
-	   But that is a bit more complicated, so this will do for
-	   now. */
-	for (i = 0; i < s->n_sockets; i++) {
-		fd = accept(s->sockets[i].common.fd, 0, 0);
+	/* Go through the accepting sockets doing an accept(2) on
+	   each, until one yields a connected socket.  This means we
+	   do some spurious accept calls.  It would be better to hang
+	   a tasklet off each accepting_socket and queue the accepted
+	   fds in userspace.  But this will do for now. */
+	for (i = 0; i < s->n_fds; i++) {
+		fd = accept(s->fds[i].fd, NULL, NULL);
 		if (fd >= 0) {
 			/* Got one! */
 			if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0) {
@@ -982,7 +783,7 @@ static struct socket *simple_server_socket_accept(struct server_socket *gs,
 				close(fd);
 			}
 			else {
-				res = simple_socket_create(s->factory, fd);
+				res = simple_socket_create(fd);
 			}
 
 			goto out;
@@ -994,13 +795,13 @@ static struct socket *simple_server_socket_accept(struct server_socket *gs,
 	}
 
 	/* No sockets ready, so wait. */
-	for (i = 0; i < s->n_sockets; i++)
-		set_events(s->factory, &s->sockets[i].common, POLLIN);
+	for (i = 0; i < s->n_fds; i++)
+		watched_fd_set_interest(&s->fds[i], POLLIN);
 
 	wait_list_wait(&s->accepting, t);
 
  out:
-	mutex_unlock(&s->factory->mutex);
+	mutex_unlock(&s->mutex);
 	return res;
 }
 
@@ -1010,75 +811,33 @@ static struct sockaddr **simple_server_socket_addresses(
 {
 	struct simple_server_socket *s = (struct simple_server_socket *)gs;
 	struct sockaddr **addrs;
-	unsigned int i;
+	int i;
 
 	assert(gs->ops == &simple_server_socket_ops);
+	mutex_lock(&s->mutex);
 
-	addrs = xalloc((s->n_sockets + 1) * sizeof *addrs);
+	addrs = xalloc((s->n_fds + 1) * sizeof *addrs);
 
-	for (i = 0; i < s->n_sockets; i++) {
-		struct sockaddr *addr
-			= get_socket_address(s->sockets[i].common.fd, err);
+	for (i = 0; i < s->n_fds; i++) {
+		struct sockaddr *addr = get_socket_address(s->fds[i].fd, err);
 		if (!addr)
 			goto error;
 
 		addrs[i] = addr;
 	}
 
-	addrs[s->n_sockets] = NULL;
+	mutex_unlock(&s->mutex);
+	addrs[s->n_fds] = NULL;
 	return addrs;
 
  error:
+	mutex_unlock(&s->mutex);
+
 	while (i-- > 0)
 		free(addrs[i]);
 
 	free(addrs);
 	return NULL;
-}
-
-static void simple_server_socket_close_locked(struct simple_server_socket *s,
-					      struct error *e)
-{
-	unsigned int i;
-
-	for (i = 0; i < s->n_sockets; i++) {
-		if (s->sockets[i].common.fd >= 0) {
-			set_events(s->factory, &s->sockets[i].common, 0);
-			common_socket_close(&s->sockets[i].common, e);
-		}
-	}
-}
-
-static void simple_server_socket_close(struct server_socket *gs,
-				       struct error *e)
-{
-	struct simple_server_socket *s = (struct simple_server_socket *)gs;
-	assert(gs->ops == &simple_server_socket_ops);
-	mutex_lock(&s->factory->mutex);
-	simple_server_socket_close_locked(s, e);
-	mutex_unlock(&s->factory->mutex);
-}
-
-static void simple_server_socket_destroy(struct server_socket *gs)
-{
-	unsigned int i;
-	struct simple_server_socket *s = (struct simple_server_socket *)gs;
-	assert(gs->ops == &simple_server_socket_ops);
-
-	mutex_lock(&s->factory->mutex);
-
-	struct error err;
-	error_init(&err);
-	simple_server_socket_close_locked(s, &err);
-	error_fini(&err);
-
-	for (i = 0; i < s->n_sockets; i++)
-		common_socket_fini(&s->sockets[i].common, s->factory);
-
-	wait_list_fini(&s->accepting);
-	free(s->sockets);
-	mutex_unlock(&s->factory->mutex);
-	free(s);
 }
 
 static struct server_socket_ops simple_server_socket_ops = {
@@ -1088,28 +847,14 @@ static struct server_socket_ops simple_server_socket_ops = {
 	simple_server_socket_destroy
 };
 
-static void simple_server_socket_handle_events(struct socket *gs, short events)
-{
-	struct accepting_socket *as = (struct accepting_socket *)gs;
-	assert(gs->ops == &accepting_socket_ops);
-
-	wait_list_broadcast(&as->parent->accepting);
-	set_events(as->parent->factory, &as->common, 0);
-}
-
-static struct socket_ops accepting_socket_ops = {
-	simple_server_socket_handle_events
-};
 
 
 static struct socket_factory_ops simple_socket_factory_ops;
-
 
 static struct socket *connect_address(struct socket_factory *gf,
 				      struct sockaddr *sa,
 				      struct error *err)
 {
-	struct simple_socket_factory *f = (struct simple_socket_factory *)gf;
 	struct connector *c;
 	struct addrinfo ai;
 
@@ -1124,13 +869,8 @@ static struct socket *connect_address(struct socket_factory *gf,
 	if (!ai.ai_addrlen)
 		return NULL;
 
-	c = connector_create(f, &ai, NULL);
-
-	mutex_lock(&f->mutex);
-	connector_connect(c);
-	mutex_unlock(&f->mutex);
-
-	return &c->parent->base.common.base;
+	c = connector_create(&ai, NULL);
+	return &c->socket->base.base;
 }
 
 static struct socket *sf_connect(struct socket_factory *gf,
@@ -1141,7 +881,6 @@ static struct socket *sf_connect(struct socket_factory *gf,
 	   glibc has a getaddrinfo_a, but for the sake of portability
 	   it might be better to farm it out to another thread. */
 
-	struct simple_socket_factory *f = (struct simple_socket_factory *)gf;
 	struct connector *c;
 	struct addrinfo hints;
 	struct addrinfo *ai;
@@ -1160,13 +899,8 @@ static struct socket *sf_connect(struct socket_factory *gf,
 		return NULL;
 	}
 
-	c = connector_create(f, ai, ai);
-
-	mutex_lock(&f->mutex);
-	connector_connect(c);
-	mutex_unlock(&f->mutex);
-
-	return &c->parent->base.common.base;
+	c = connector_create(ai, ai);
+	return &c->socket->base.base;
 }
 
 static int make_listening_socket(int family, int socktype, struct error *err)
@@ -1185,7 +919,6 @@ static int make_listening_socket(int family, int socktype, struct error *err)
 static struct server_socket *unbound_server_socket(struct socket_factory *gf,
 						   struct error *e)
 {
-	struct simple_socket_factory *f = (struct simple_socket_factory *)gf;
 	int fd;
 	struct simple_server_socket *s;
 
@@ -1195,7 +928,7 @@ static struct server_socket *unbound_server_socket(struct socket_factory *gf,
 	if (fd < 0)
 		return NULL;
 
-	s = simple_server_socket_create(f, &fd, 1);
+	s = simple_server_socket_create(&fd, 1);
 	return &s->base;
 }
 
@@ -1239,17 +972,16 @@ static struct server_socket *bound_server_socket(struct socket_factory *gf,
 						 const char *service,
 						 struct error *err_out)
 {
-	struct simple_socket_factory *f = (struct simple_socket_factory *)gf;
 	struct addrinfo *ai, *addrinfos, hints;
-	unsigned int n_addrs = 0, n_sockets = 0;
-	int *socket_fds;
+	int n_addrs = 0, n_sockets = 0;
+	int *fds;
 	int res;
 	struct simple_server_socket *s;
 	struct error err;
 
 	assert(gf->ops == &simple_socket_factory_ops);
 
-	// See RFC4038, section 6.3.1.
+	/* See RFC4038, section 6.3.1. */
 
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
@@ -1271,14 +1003,14 @@ static struct server_socket *bound_server_socket(struct socket_factory *gf,
 		n_addrs++;
 
 	/* Allocate space for the fds */
-	socket_fds = xalloc(n_addrs * sizeof *socket_fds);
+	fds = xalloc(n_addrs * sizeof *fds);
 
 	/* Create sockets */
 	error_init(&err);
 	for (ai = addrinfos; ai; ai = ai->ai_next) {
 		int fd = make_bound_socket(ai, &err);
 		if (fd >= 0)
-			socket_fds[n_sockets++] = fd;
+			fds[n_sockets++] = fd;
 	}
 
 	freeaddrinfo(addrinfos);
@@ -1286,84 +1018,30 @@ static struct server_socket *bound_server_socket(struct socket_factory *gf,
 	/* If no sockets were successfully bound, report an error. */
 	if (n_sockets == 0) {
 		error_propogate(&err, err_out);
-		free(socket_fds);
+		free(fds);
 		return NULL;
 	}
 
-	s = simple_server_socket_create(f, socket_fds, n_sockets);
+	s = simple_server_socket_create(fds, n_sockets);
 	error_fini(&err);
-	free(socket_fds);
+	free(fds);
 	return &s->base;
 }
-
-static void simple_socket_factory_poll(struct socket_factory *gf,
-				       struct error *e)
-{
-	struct simple_socket_factory *f = (struct simple_socket_factory *)gf;
-	struct pollfd *pollfds;
-	int pollfds_used, i;
-
-	mutex_lock(&f->mutex);
-	apply_updates(f);
-	pollfds = f->pollfds;
-	pollfds_used = f->pollfds_used;
-	mutex_unlock(&f->mutex);
-
-	if (poll(pollfds, pollfds_used, -1) < 0) {
-		if (errno != EINTR)
-			error_errno(e, "poll");
-
-		return;
-	}
-
-	mutex_lock(&f->mutex);
-
-	for (i = 0; i < pollfds_used; i++) {
-		if (pollfds[i].revents) {
-			struct common_socket *s = f->pollfd_sockets[i];
-			if (s)
-				s->base.ops->handle_events(&s->base,
-							   pollfds[i].revents);
-		}
-	}
-
-	mutex_unlock(&f->mutex);
-}
-
 
 static struct socket_factory_ops simple_socket_factory_ops = {
 	sf_connect,
 	connect_address,
 	unbound_server_socket,
-	bound_server_socket,
-	simple_socket_factory_poll
+	bound_server_socket
 };
 
-static struct socket_factory *default_socket_factory;
-
-static void socket_factory_cleanup(void)
-{
-	struct socket_factory *sf = default_socket_factory;
-	if (sf)
-		socket_factory_destroy(sf);
-}
+static struct socket_factory simple_socket_factory = {
+	&simple_socket_factory_ops
+};
 
 struct socket_factory *socket_factory()
 {
-	for (;;) {
-		struct socket_factory *sf = default_socket_factory;
-		if (sf)
-			return sf;
-
-		sf = socket_factory_create();
-		if (__sync_bool_compare_and_swap(&default_socket_factory, NULL,
-						 sf)) {
-			atexit(socket_factory_cleanup);
-			return sf;
-		}
-
-		socket_factory_destroy(sf);
-	}
+	return &simple_socket_factory;
 }
 
 static bool_t sf_stop_run;
@@ -1373,7 +1051,7 @@ void sigint_handler(int sig)
 	sf_stop_run = 1;
 }
 
-void socket_factory_run(struct socket_factory *f, struct error *e)
+void socket_factory_run(struct error *e)
 {
 	sighandler_t old_sigint;
 
@@ -1386,7 +1064,7 @@ void socket_factory_run(struct socket_factory *f, struct error *e)
 		if (sf_stop_run)
 			break;
 
-		socket_factory_poll(f, e);
+		poll_poll(poll_singleton(), e);
 	}
 
 	signal(SIGINT, old_sigint);

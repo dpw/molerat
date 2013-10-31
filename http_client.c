@@ -179,7 +179,7 @@ int main(int argc, char **argv)
 		goto out;
 
 	hc = http_client_create(s);
-	socket_factory_run(sf, &err);
+	socket_factory_run(&err);
 	http_client_destroy(hc);
 
  out:

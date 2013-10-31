@@ -11,7 +11,6 @@ struct socket {
 };
 
 struct socket_ops {
-	void (*handle_events)(struct socket *s, short events);
 	ssize_t (*read)(struct socket *s, void *buf, size_t len,
 			struct tasklet *t, struct error *e);
 	ssize_t (*write)(struct socket *s, void *buf,  size_t len,
@@ -120,7 +119,6 @@ struct socket_factory_ops {
 						     const char *host,
 						     const char *service,
 						     struct error *e);
-	void (*poll)(struct socket_factory *f, struct error *e);
 };
 
 static inline struct socket *socket_factory_connect(struct socket_factory *f,
@@ -152,16 +150,10 @@ static inline struct server_socket *socket_factory_bound_server_socket(
 	return f->ops->bound_server_socket(f, host, service, e);
 }
 
-static inline void socket_factory_poll(struct socket_factory *f,
-				       struct error *e)
-{
-	return f->ops->poll(f, e);
-}
-
 
 struct socket_factory *socket_factory();
 
-void socket_factory_run(struct socket_factory *f, struct error *e);
+void socket_factory_run(struct error *e);
 void socket_factory_stop(void);
 
 char *print_sockaddr(struct sockaddr *sa, struct error *err);

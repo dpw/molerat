@@ -1,3 +1,14 @@
+Move polling to a separate thread
+- Use signal/ppoll to wake it
+- Will do lots of wakeup.   Fine for now.
+
+Move run queues to spearate threads
+- If in tasklet_run the current thread is nominally a run queue thread, use it
+
+Make polling thread a runqueue thread, so it doesn't get woken from
+poll so much.
+
+
 new socket read/write interfaces (return code indicates blocked,
 progress (>0), error, closed)
 

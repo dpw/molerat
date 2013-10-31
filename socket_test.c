@@ -156,7 +156,7 @@ static void test_echo_server(struct socket_factory *sf,
 	struct tester *t = tester_create(s);
 
 	error_init(&err);
-	socket_factory_run(sf, &err);
+	socket_factory_run(&err);
 	check_error(&err);
 	tester_check(t);
 	tester_destroy(t);
@@ -231,19 +231,12 @@ static void test_connect_failure(void)
 	check_error(&err);
 
 	t = tester_create(s);
-
-	for (;;) {
-		run_queue_thread_run();
-		if (!error_ok(&t->write_err) && !error_ok(&t->read_err))
-			break;
-
-		socket_factory_poll(sf, &err);
-		check_error(&err);
-	}
-
+	socket_factory_run(&err);
+	check_error(&err);
+	assert(!error_ok(&t->write_err));
 	assert(strstr(error_message(&t->write_err), "Connection refused"));
+	assert(!error_ok(&t->read_err));
 	assert(strstr(error_message(&t->read_err), "Connection refused"));
-
 	tester_destroy(t);
 	error_fini(&err);
 }

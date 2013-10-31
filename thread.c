@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
 
 #include "thread.h"
 
@@ -40,6 +41,11 @@ void thread_fini(struct thread *thr)
 {
 	check_pthread_res("pthread_join", pthread_join(thr->id, NULL));
 	free(thr->init);
+}
+
+void thread_signal(struct thread *thr, int sig)
+{
+	check_pthread_res("pthread_kill", pthread_kill(thr->id, sig));
 }
 
 void mutex_init(struct mutex *m)

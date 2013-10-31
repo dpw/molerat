@@ -1,15 +1,17 @@
-Move polling to a separate thread
-- Use signal/ppoll to wake it
-- Will do lots of wakeup.   Fine for now.
+Check syscalls cleanly in poll (abort with nice message)
+
+- app_run and app_stop, just move the code from socket.c across.
 
 Move run queues to spearate threads
 - If in tasklet_run the current thread has a run queue, use it
-- Plus a fallback run queue
-- application_run and application_stop
+- Plus a fallback run queue + thread
+- application_run and application_stop,
+- restore SIGINT handling (main app can handle this)
 
 Make polling thread a runqueue thread, so it doesn't get woken from
 poll so much.  Check that wakeups get reduced accordingly.
 
+thread API probably better pointer-based
 
 new socket read/write interfaces (return code indicates blocked,
 progress (>0), error, closed)

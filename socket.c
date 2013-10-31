@@ -1046,28 +1046,15 @@ struct socket_factory *socket_factory()
 
 static bool_t sf_stop_run;
 
-void sigint_handler(int sig)
-{
-	sf_stop_run = 1;
-}
-
 void socket_factory_run(struct error *e)
 {
-	sighandler_t old_sigint;
-
 	sf_stop_run = 0;
-	old_sigint = signal(SIGINT, sigint_handler);
+	/* old_sigint = signal(SIGINT, sigint_handler); */
 
-	while (!sf_stop_run && error_ok(e)) {
-		run_queue_thread_run();
+	while (!sf_stop_run)
+		run_queue_thread_run_waiting();
 
-		if (sf_stop_run)
-			break;
-
-		poll_poll(poll_singleton(), e);
-	}
-
-	signal(SIGINT, old_sigint);
+	/* signal(SIGINT, old_sigint); */
 }
 
 void socket_factory_stop(void)

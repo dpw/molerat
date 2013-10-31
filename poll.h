@@ -37,7 +37,6 @@ struct watched_fd {
 
 struct poll *poll_create(void);
 void poll_destroy(struct poll *p);
-void poll_poll(struct poll *p, struct error *e);
 
 struct poll *poll_singleton(void);
 

@@ -1,11 +1,16 @@
 #include <poll.h>
 #include <assert.h>
+#include <signal.h>
 
 #include "thread.h"
 #include "poll.h"
 
 struct poll {
 	struct mutex mutex;
+
+	enum { NONE, PROCESSING, POLLING } thread_state;
+	bool_t thread_stopping;
+	struct thread thread;
 
 	/* pollfs is the array of pollfds that gets passed to poll(2).
 	 *
@@ -41,6 +46,8 @@ struct poll *poll_create(void)
 	struct poll *p = xalloc(sizeof *p);
 
 	mutex_init(&p->mutex);
+	p->thread_state = NONE;
+	p->thread_stopping = FALSE;
 	p->pollfds = NULL;
 	p->watched_fds = NULL;
 	p->pollfds_size = p->pollfds_used = 0;
@@ -54,6 +61,17 @@ void poll_destroy(struct poll *p)
 {
 	int i;
 
+	mutex_lock(&p->mutex);
+
+	if (p->thread_state != NONE) {
+		p->thread_stopping = TRUE;
+		p->thread_state = PROCESSING;
+		thread_signal(&p->thread, SIGUSR1);
+		mutex_unlock(&p->mutex);
+		thread_fini(&p->thread);
+		mutex_lock(&p->mutex);
+	}
+
 	for (i = 0; i < p->pollfds_used; i++)
 		assert(!p->watched_fds[i]);
 
@@ -63,7 +81,7 @@ void poll_destroy(struct poll *p)
 	free(p->pollfds);
 	free(p->watched_fds);
 	free(p->pollfd_updates);
-	mutex_fini(&p->mutex);
+	mutex_unlock_fini(&p->mutex);
 	free(p);
 }
 
@@ -76,6 +94,8 @@ void watched_fd_init(struct watched_fd *w, struct poll *poll, int fd,
 	w->handle_events = handle_events;
 	w->data = data;
 }
+
+static void poll_thread(void *v_p);
 
 /* Allocate a new pollfd_update and return its slot. */
 static int add_update(struct poll *p, int poll_slot, short events,
@@ -96,6 +116,15 @@ static int add_update(struct poll *p, int poll_slot, short events,
 	update->poll_slot = poll_slot;
 	update->events = events;
 	update->watched_fd = w;
+
+	if (p->thread_state != PROCESSING) {
+		if (p->thread_state == NONE)
+			thread_init(&p->thread, poll_thread, p);
+		else
+			thread_signal(&p->thread, SIGUSR1);
+
+		p->thread_state = PROCESSING;
+	}
 
 	return slot;
 }
@@ -224,38 +253,57 @@ static void apply_updates(struct poll *p)
 	p->pollfd_updates_used = 0;
 }
 
-void poll_poll(struct poll *p, struct error *e)
+static void poll_thread(void *v_p)
 {
-	struct pollfd *pollfds;
-	int pollfds_used, i;
+	struct poll *p = v_p;
+	sigset_t oldset, blockset;
 
-	mutex_lock(&p->mutex);
-	apply_updates(p);
-	pollfds = p->pollfds;
-	pollfds_used = p->pollfds_used;
-	mutex_unlock(&p->mutex);
-
-	if (poll(pollfds, pollfds_used, -1) < 0) {
-		if (errno != EINTR)
-			error_errno(e, "poll");
-
-		return;
-	}
+	sigemptyset(&blockset);
+	sigaddset(&blockset, SIGUSR1);
+	assert(!pthread_sigmask(SIG_BLOCK, &blockset, &oldset));
 
 	mutex_lock(&p->mutex);
 
-	for (i = 0; i < pollfds_used; i++) {
-		if (pollfds[i].revents) {
-			struct watched_fd *w = p->watched_fds[i];
-			if (w)
-				pollfds[i].events = w->handle_events(w->data,
+	while (!p->thread_stopping) {
+		struct pollfd *pollfds;
+		int pollfds_used, i;
+
+		apply_updates(p);
+		pollfds = p->pollfds;
+		pollfds_used = p->pollfds_used;
+		p->thread_state = POLLING;
+		mutex_unlock(&p->mutex);
+
+		if (ppoll(pollfds, pollfds_used, NULL, &oldset) < 0) {
+			assert(errno == EINTR);
+			mutex_lock(&p->mutex);
+			continue;
+		}
+
+		mutex_lock(&p->mutex);
+
+		/* Dispatch events */
+		for (i = 0; i < pollfds_used; i++) {
+			if (pollfds[i].revents) {
+				struct watched_fd *w = p->watched_fds[i];
+				if (w)
+					pollfds[i].events
+						= w->handle_events(w->data,
 							     pollfds[i].revents,
 							     pollfds[i].events);
+			}
 		}
 	}
 
 	mutex_unlock(&p->mutex);
 }
+
+static void wake_signal(int sig)
+{
+	/* No action is needed.  Signal delivery will cause ppoll to
+	   return with EINTR. */
+}
+
 
 static struct poll *singleton;
 
@@ -272,6 +320,8 @@ struct poll *poll_singleton(void)
 		struct poll *p = singleton;
 		if (p)
 			return p;
+
+		assert(signal(SIGUSR1, wake_signal) != SIG_ERR);
 
 		p = poll_create();
 		if (__sync_bool_compare_and_swap(&singleton, NULL, p)) {

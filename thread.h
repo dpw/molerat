@@ -14,7 +14,7 @@ struct thread {
 
 void thread_init(struct thread *thr, void (*func)(void *data), void *data);
 void thread_fini(struct thread *thr);
-
+void thread_signal(struct thread *thr, int sig);
 
 struct mutex {
 	skinny_mutex_t mutex;

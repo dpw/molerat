@@ -1,10 +1,13 @@
-- app_run and app_stop, just move the code from socket.c across.
+Put all run queues on a linked list, clean up on exit
 
-Move run queues to spearate threads
-- If in tasklet_run the current thread has a run queue, use it
-- Plus a fallback run queue + thread
-- application_run and application_stop,
-- restore SIGINT handling (main app can handle this)
+Add a way for a thread to install a run queue as its preferred one
+
+Run a fallback run queue in its own thread
+
+application_run should simply wait for application_stop to be
+called.
+
+restore SIGINT handling (main thread can handle this)
 
 Make polling thread a runqueue thread, so it doesn't get woken from
 poll so much.  Check that wakeups get reduced accordingly.
@@ -16,8 +19,6 @@ progress (>0), error, closed)
 
 thorough testing of http reader (byte-by-byte parsing, large bodies,
 prebody-body-prebody handling)
-
-combined tasklet_init_run (won't need lock)
 
 EPIPE/SIGPIPE handling.  At least make it an error.
 

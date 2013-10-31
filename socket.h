@@ -153,9 +153,6 @@ static inline struct server_socket *socket_factory_bound_server_socket(
 
 struct socket_factory *socket_factory();
 
-void socket_factory_run(struct error *e);
-void socket_factory_stop(void);
-
 char *print_sockaddr(struct sockaddr *sa, struct error *err);
 void free_sockaddrs(struct sockaddr **addrs);
 

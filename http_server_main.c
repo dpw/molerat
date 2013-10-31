@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "socket.h"
+#include "application.h"
 #include "http_server.h"
 
 int main(int argc, char **argv)
@@ -36,7 +37,7 @@ int main(int argc, char **argv)
 	if (!hs)
 		goto out;
 
-	socket_factory_run(&err);
+	application_run();
 	http_server_destroy(hs);
 
  out:

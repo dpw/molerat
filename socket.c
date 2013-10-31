@@ -1048,21 +1048,3 @@ struct socket_factory *socket_factory()
 {
 	return &simple_socket_factory;
 }
-
-static bool_t sf_stop_run;
-
-void socket_factory_run(struct error *e)
-{
-	sf_stop_run = 0;
-	/* old_sigint = signal(SIGINT, sigint_handler); */
-
-	while (!sf_stop_run)
-		run_queue_thread_run_waiting();
-
-	/* signal(SIGINT, old_sigint); */
-}
-
-void socket_factory_stop(void)
-{
-	sf_stop_run = 1;
-}

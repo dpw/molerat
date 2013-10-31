@@ -4,6 +4,7 @@
 #include "base.h"
 #include "socket.h"
 #include "tasklet.h"
+#include "application.h"
 #include "echo_server.h"
 
 struct tester {
@@ -47,7 +48,7 @@ void tester_write(void *v_t)
 
 	if (!error_ok(&t->write_err)) {
 		tasklet_stop(&t->write_tasklet);
-		socket_factory_stop();
+		application_stop();
 	}
 
 	mutex_unlock(&t->mutex);
@@ -70,7 +71,7 @@ void tester_read(void *v_t)
 		if (res <= 0) {
 			if (res == 0) {
 				tasklet_stop(&t->read_tasklet);
-				socket_factory_stop();
+				application_stop();
 			}
 
 			break;
@@ -81,7 +82,7 @@ void tester_read(void *v_t)
 
 	if (!error_ok(&t->read_err)) {
 		tasklet_stop(&t->read_tasklet);
-		socket_factory_stop();
+		application_stop();
 	}
 
 	mutex_unlock(&t->mutex);
@@ -156,7 +157,7 @@ static void test_echo_server(struct socket_factory *sf,
 	struct tester *t = tester_create(s);
 
 	error_init(&err);
-	socket_factory_run(&err);
+	application_run();
 	check_error(&err);
 	tester_check(t);
 	tester_destroy(t);
@@ -231,7 +232,7 @@ static void test_connect_failure(void)
 	check_error(&err);
 
 	t = tester_create(s);
-	socket_factory_run(&err);
+	application_run();
 	check_error(&err);
 	assert(!error_ok(&t->write_err));
 	assert(strstr(error_message(&t->write_err), "Connection refused"));

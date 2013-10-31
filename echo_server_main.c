@@ -3,6 +3,7 @@
 #include "base.h"
 #include "socket.h"
 #include "tasklet.h"
+#include "application.h"
 #include "echo_server.h"
 
 int main(int argc, char **argv)
@@ -38,7 +39,7 @@ int main(int argc, char **argv)
 	if (!es)
 		goto out;
 
-	socket_factory_run(&err);
+	application_run();
 	echo_server_destroy(es);
 
  out:

@@ -2,6 +2,7 @@
 
 #include "socket.h"
 #include "tasklet.h"
+#include "application.h"
 #include "buffer.h"
 #include "http_reader.h"
 
@@ -122,7 +123,7 @@ static void read_response_prebody(void *v_c)
 		fprintf(stderr, "Error: %s\n", error_message(&c->err));
 
 	tasklet_stop(&c->tasklet);
-	socket_factory_stop();
+	application_stop();
 	mutex_unlock(&c->mutex);
 }
 
@@ -154,7 +155,7 @@ static void read_response_body(void *v_c)
 	}
 
 	tasklet_stop(&c->tasklet);
-	socket_factory_stop();
+	application_stop();
 	mutex_unlock(&c->mutex);
 }
 
@@ -179,7 +180,7 @@ int main(int argc, char **argv)
 		goto out;
 
 	hc = http_client_create(s);
-	socket_factory_run(&err);
+	application_run();
 	http_client_destroy(hc);
 
  out:

@@ -3,6 +3,7 @@
 #include <signal.h>
 
 #include "thread.h"
+#include "tasklet.h"
 #include "poll.h"
 
 struct poll {
@@ -256,7 +257,10 @@ static void apply_updates(struct poll *p)
 static void poll_thread(void *v_p)
 {
 	struct poll *p = v_p;
+	struct run_queue *runq = run_queue_create();
 	sigset_t oldset, blockset;
+
+	run_queue_target(runq);
 
 	sigemptyset(&blockset);
 	sigaddset(&blockset, SIGUSR1);
@@ -284,6 +288,7 @@ static void poll_thread(void *v_p)
 		}
 
 		mutex_lock(&p->mutex);
+		p->thread_state = PROCESSING;
 
 		/* Dispatch events */
 		for (i = 0; i < pollfds_used; i++) {
@@ -296,6 +301,10 @@ static void poll_thread(void *v_p)
 							     pollfds[i].events);
 			}
 		}
+
+		mutex_unlock(&p->mutex);
+		run_queue_run(runq, FALSE);
+		mutex_lock(&p->mutex);
 	}
 
 	mutex_unlock(&p->mutex);

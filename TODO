@@ -1,6 +1,3 @@
-Make polling thread a runqueue thread, so it doesn't get woken from
-poll so much.  Check that wakeups get reduced accordingly.
-
 restore SIGINT handling (main thread can handle this)
 
 thread API probably better pointer-based

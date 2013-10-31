@@ -1,5 +1,3 @@
-Check syscalls cleanly in poll (abort with nice message)
-
 - app_run and app_stop, just move the code from socket.c across.
 
 Move run queues to spearate threads

@@ -16,6 +16,12 @@ void *xalloc(size_t s);
 void *xrealloc(void *p, size_t s);
 size_t xsprintf(char **buf, const char *fmt, ...);
 
+/* Abort on a failed syscall */
+void check_syscall(const char *name, int ok);
+
+/* Abort on a failed pthreads call */
+void check_pthreads(const char *name, int res);
+
 struct error {
 	unsigned int category;
 	const char *message;

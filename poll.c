@@ -260,7 +260,8 @@ static void poll_thread(void *v_p)
 
 	sigemptyset(&blockset);
 	sigaddset(&blockset, SIGUSR1);
-	assert(!pthread_sigmask(SIG_BLOCK, &blockset, &oldset));
+	check_pthreads("pthread_sigmask",
+		       pthread_sigmask(SIG_BLOCK, &blockset, &oldset));
 
 	mutex_lock(&p->mutex);
 
@@ -275,7 +276,9 @@ static void poll_thread(void *v_p)
 		mutex_unlock(&p->mutex);
 
 		if (ppoll(pollfds, pollfds_used, NULL, &oldset) < 0) {
-			assert(errno == EINTR);
+			if (errno != EINTR)
+				check_syscall("ppoll", 0);
+
 			mutex_lock(&p->mutex);
 			continue;
 		}
@@ -321,7 +324,8 @@ struct poll *poll_singleton(void)
 		if (p)
 			return p;
 
-		assert(signal(SIGUSR1, wake_signal) != SIG_ERR);
+		check_syscall("signal",
+			      signal(SIGUSR1, wake_signal) != SIG_ERR);
 
 		p = poll_create();
 		if (__sync_bool_compare_and_swap(&singleton, NULL, p)) {

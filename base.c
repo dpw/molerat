@@ -57,6 +57,49 @@ size_t xsprintf(char **buf, const char *fmt, ...)
 	abort();
 }
 
+static void safe_strerror(int errnum, char *buf, size_t sz)
+{
+	/* The "* 1" here is to make sure we have the POSIX
+	   strerror_r, not the GNU variant which returns a pointer. */
+	if (strerror_r(errnum, buf, sz) * 1 == 0)
+		return;
+
+	switch (errno) {
+	case EINVAL:
+		snprintf(buf, sz, "unknown error %d", errnum);
+		break;
+
+	case ERANGE:
+		strncpy(buf, "<overlong strerror message>", sz);
+		buf[sz] = 0;
+		break;
+
+	default:
+		snprintf(buf, sz, "<strerror error %d>", errno);
+		break;
+	}
+}
+
+void check_syscall(const char *name, int ok)
+{
+	if (!ok) {
+		char buf[100];
+		safe_strerror(errno, buf, 100);
+		fprintf(stderr, "fatal error: %s: %s\n", name, buf);
+		abort();
+	}
+}
+
+void check_pthreads(const char *name, int res)
+{
+	if (res) {
+		char buf[100];
+		safe_strerror(errno, buf, 100);
+		fprintf(stderr, "fatal error: %s: %s\n", name, buf);
+		abort();
+	}
+}
+
 static const char fallback_message[] = "<unable to format message>";
 
 void error_fini(struct error *e)
@@ -106,49 +149,18 @@ void error_set(struct error *e, unsigned int cat, const char *fmt, ...)
 	va_end(ap);
 }
 
-static char *errno_message(int en)
-{
-	size_t sz = 100;
-	char *buf;
-
-	for (;;) {
-		bool_t failed;
-
-		buf = malloc(sz);
-
-		// The "* 1" here is to make sure we have the POSIX
-		// strerror_r, not the GNU variant which returns a pointer.
-		if (!buf || strerror_r(en, buf, sz) * 1 >= 0)
-			break;
-
-		failed = (errno != ERANGE);
-		free(buf);
-		buf = NULL;
-
-		if (failed)
-			break;
-
-		sz *= 2;
-	}
-
-	return buf;
-}
-
 static void error_errno_val_va(struct error *e, int errnum, const char *fmt,
 			       va_list ap)
 {
-	char *en_msg = errno_message(errnum);
+	char buf[100];
 	char *msg;
 
 	if (vasprintf(&msg, fmt, ap) < 0)
 		msg = NULL;
 
-	error_set(e, ERROR_OS, "%s: %s",
-		  msg ? msg : fallback_message,
-		  en_msg ? en_msg : fallback_message);
-
+	safe_strerror(errnum, buf, 100);
+	error_set(e, ERROR_OS, "%s: %s", msg ? msg : fallback_message, buf);
 	free(msg);
-	free(en_msg);
 }
 
 void error_errno(struct error *e, const char *fmt, ...)

@@ -550,11 +550,16 @@ static void connector_error(void *v_c)
 	struct connector *c = v_c;
 	int e;
 	socklen_t len = sizeof e;
+	const char *syscall = "connect";
 
-	assert(!getsockopt(c->watched_fd.fd, SOL_SOCKET, SO_ERROR, &e, &len));
+	if (getsockopt(c->watched_fd.fd, SOL_SOCKET, SO_ERROR, &e, &len)) {
+		e = errno;
+		syscall = "getsockopt";
+	}
+
 	if (e) {
 		/* Stash the error and try another address */
-		error_errno_val(&c->err, e, "connect");
+		error_errno_val(&c->err, e, syscall);
 		tasklet_now(&c->tasklet, connector_connect);
 	}
 	else {

@@ -3,10 +3,12 @@ Move polling to a separate thread
 - Will do lots of wakeup.   Fine for now.
 
 Move run queues to spearate threads
-- If in tasklet_run the current thread is nominally a run queue thread, use it
+- If in tasklet_run the current thread has a run queue, use it
+- Plus a fallback run queue
+- application_run and application_stop
 
 Make polling thread a runqueue thread, so it doesn't get woken from
-poll so much.
+poll so much.  Check that wakeups get reduced accordingly.
 
 
 new socket read/write interfaces (return code indicates blocked,
@@ -28,3 +30,7 @@ simple_socket ops.
 
 tasklet: current_stopped and current_requeue should be combined into a
 single state flag.
+
+Refine thread.c lock held checking (use thread id)
+
+Make test programs timeout

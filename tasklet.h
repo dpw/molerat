@@ -59,5 +59,6 @@ void wait_list_wait(struct wait_list *w, struct tasklet *t);
 void wait_list_broadcast(struct wait_list *w);
 
 void run_queue_thread_run(void);
+void run_queue_thread_run_waiting(void);
 
 #endif

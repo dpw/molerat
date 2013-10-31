@@ -40,7 +40,7 @@ void test_tasklet_destroy(struct test_tasklet *tt)
 	free(tt);
 }
 
-int main(void)
+static void test_wait_list(void)
 {
 	int count = 3;
 	int i, total_got;
@@ -71,6 +71,61 @@ int main(void)
 
 	wait_list_fini(&sema);
 	free(tts);
+}
 
+/* Wait a millisecond */
+static void delay(void)
+{
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 1000000;
+        assert(!nanosleep(&ts, NULL));
+}
+
+struct trqw {
+	struct mutex mutex;
+	struct tasklet tasklet;
+	bool_t *ran;
+};
+
+static void test_run_queue_waiting_done(void *v_t)
+{
+	struct trqw *t = v_t;
+
+	*t->ran = TRUE;
+
+	tasklet_fini(&t->tasklet);
+	mutex_unlock_fini(&t->mutex);
+	free(t);
+}
+
+
+static void test_run_queue_waiting_thread(void *v_ran)
+{
+	struct trqw *t = xalloc(sizeof *t);
+
+	mutex_init(&t->mutex);
+	tasklet_init(&t->tasklet, &t->mutex, t);
+	t->ran = v_ran;
+
+	delay();
+	tasklet_later(&t->tasklet, test_run_queue_waiting_done);
+}
+
+static void test_run_queue_waiting(void)
+{
+	bool_t ran = FALSE;
+	struct thread thr;
+
+	thread_init(&thr, test_run_queue_waiting_thread, &ran);
+	run_queue_thread_run_waiting();
+	assert(ran);
+	thread_fini(&thr);
+}
+
+int main(void)
+{
+	test_wait_list();
+	test_run_queue_waiting();
         return 0;
 }

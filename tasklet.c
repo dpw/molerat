@@ -18,7 +18,8 @@ struct run_queue {
 	bool_t current_stopped;
 	bool_t current_requeue;
 
-	bool_t waiting;
+	bool_t stop_waiting;
+	bool_t worker_waiting;
 	pthread_t thread;
 	struct cond cond;
 };
@@ -29,7 +30,8 @@ struct run_queue *run_queue_create(void)
 
 	mutex_init(&runq->mutex);
 	runq->head = runq->current = NULL;
-	runq->waiting = FALSE;
+	runq->stop_waiting = FALSE;
+	runq->worker_waiting = FALSE;
 	cond_init(&runq->cond);
 
 	return runq;
@@ -83,6 +85,9 @@ static void run_queue_enqueue(struct run_queue *runq, struct tasklet *t)
 	head = runq->head;
 	if (!head) {
 		runq->head = t->runq_next = t->runq_prev = t;
+
+		if (runq->worker_waiting)
+			cond_signal(&runq->cond);
 	}
 	else {
 		struct tasklet *prev = head->runq_prev;
@@ -381,16 +386,28 @@ bool_t wait_list_nonempty(struct wait_list *w)
 	return !!w->head;
 }
 
-void run_queue_run(struct run_queue *runq)
+void run_queue_run(struct run_queue *runq, bool_t wait)
 {
+	struct tasklet *t;
+
 	mutex_lock(&runq->mutex);
+
+	t = runq->head;
+	if (!t) {
+		if (!wait)
+			goto out;
+
+		runq->worker_waiting = TRUE;
+		do {
+			cond_wait(&runq->cond, &runq->mutex);
+			t = runq->head;
+		} while (!t);
+		runq->worker_waiting = FALSE;
+	}
+
 	runq->thread = pthread_self();
 
-	for (;;) {
-		struct tasklet *t = runq->head;
-		if (!t)
-			break;
-
+	do {
 		run_queue_remove(runq, t);
 		runq->current = t;
 		runq->current_requeue = runq->current_stopped = FALSE;
@@ -418,13 +435,17 @@ void run_queue_run(struct run_queue *runq)
 			}
 		}
 
-		if (runq->waiting) {
-			runq->waiting = FALSE;
+		if (runq->stop_waiting) {
+			runq->stop_waiting = FALSE;
 			cond_broadcast(&runq->cond);
 		}
-	}
+
+		t = runq->head;
+	} while (t);
 
 	runq->current = NULL;
+
+ out:
 	mutex_unlock(&runq->mutex);
 }
 
@@ -453,7 +474,7 @@ void tasklet_stop(struct tasklet *t)
 					mutex_veto_transfer(t->mutex);
 
 					/* Wait until the tasklet is done */
-					runq->waiting = TRUE;
+					runq->stop_waiting = TRUE;
 
 					do
 						cond_wait(&runq->cond,
@@ -494,7 +515,7 @@ void tasklet_fini(struct tasklet *t)
 				mutex_veto_transfer(t->mutex);
 
 				/* Wait until the tasklet is done */
-				runq->waiting = TRUE;
+				runq->stop_waiting = TRUE;
 
 				do
 					cond_wait(&runq->cond, &runq->mutex);
@@ -516,5 +537,10 @@ void tasklet_fini(struct tasklet *t)
 
 void run_queue_thread_run(void)
 {
-	run_queue_run(thread_run_queue());
+	run_queue_run(thread_run_queue(), FALSE);
+}
+
+void run_queue_thread_run_waiting(void)
+{
+	run_queue_run(thread_run_queue(), TRUE);
 }

@@ -623,6 +623,8 @@ void tasklet_fini(struct tasklet *t)
 				mutex_veto_transfer(t->mutex);
 
 				/* Wait until the tasklet is done */
+				runq->current_requeue = FALSE;
+				runq->current_stopped = TRUE;
 				runq->stop_waiting = TRUE;
 
 				do

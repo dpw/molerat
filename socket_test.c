@@ -22,7 +22,16 @@ struct tester {
 	size_t read_pos;
 	size_t read_capacity;
 	struct error read_err;
+
+	int stopped;
 };
+
+void tester_stop_1(struct tester *t, struct tasklet *tasklet)
+{
+	tasklet_stop(tasklet);
+	if (++t->stopped == 2)
+		application_stop();
+}
 
 void tester_write(void *v_t)
 {
@@ -32,7 +41,7 @@ void tester_write(void *v_t)
 	for (;;) {
 		if (t->write_pos == t->write_len) {
 			socket_partial_close(t->socket, 1, 0, &t->write_err);
-			tasklet_stop(&t->write_tasklet);
+			tester_stop_1(t, &t->write_tasklet);
 			break;
 		}
 
@@ -46,10 +55,8 @@ void tester_write(void *v_t)
 		t->write_pos += res;
 	}
 
-	if (!error_ok(&t->write_err)) {
-		tasklet_stop(&t->write_tasklet);
-		application_stop();
-	}
+	if (!error_ok(&t->write_err))
+		tester_stop_1(t, &t->write_tasklet);
 
 	mutex_unlock(&t->mutex);
 }
@@ -69,10 +76,8 @@ void tester_read(void *v_t)
 				  t->read_capacity - t->read_pos,
 				  &t->read_tasklet, &t->read_err);
 		if (res <= 0) {
-			if (res == 0) {
-				tasklet_stop(&t->read_tasklet);
-				application_stop();
-			}
+			if (res == 0)
+				tester_stop_1(t, &t->read_tasklet);
 
 			break;
 		}
@@ -80,10 +85,8 @@ void tester_read(void *v_t)
 		t->read_pos += res;
 	}
 
-	if (!error_ok(&t->read_err)) {
-		tasklet_stop(&t->read_tasklet);
-		application_stop();
-	}
+	if (!error_ok(&t->read_err))
+		tester_stop_1(t, &t->read_tasklet);
 
 	mutex_unlock(&t->mutex);
 }
@@ -93,6 +96,7 @@ struct tester *tester_create(struct socket *s)
 	struct tester *t = xalloc(sizeof *t);
 	mutex_init(&t->mutex);
 	t->socket = s;
+	t->stopped = 0;
 
 	tasklet_init(&t->write_tasklet, &t->mutex, t);
 	t->write_buf = "Hello";
@@ -153,16 +157,12 @@ static void test_echo_server(struct socket_factory *sf,
 			     struct echo_server *es,
 			     struct socket *s)
 {
-	struct error err;
 	struct tester *t = tester_create(s);
 
-	error_init(&err);
 	application_run();
-	check_error(&err);
 	tester_check(t);
 	tester_destroy(t);
 	echo_server_destroy(es);
-	error_fini(&err);
 }
 
 static void test_echo_direct(void)
@@ -228,12 +228,11 @@ static void test_connect_failure(void)
 
 	error_init(&err);
 
-	s = socket_factory_connect(sf, "localhost", "9998", &err);
+	s = socket_factory_connect(sf, "127.0.0.1", "9998", &err);
 	check_error(&err);
 
 	t = tester_create(s);
 	application_run();
-	check_error(&err);
 	assert(!error_ok(&t->write_err));
 	assert(strstr(error_message(&t->write_err), "Connection refused"));
 	assert(!error_ok(&t->read_err));

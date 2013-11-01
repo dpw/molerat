@@ -1,3 +1,9 @@
+# Make version check
+REQUIRED_MAKE_VERSION:=3.81
+ifneq ($(shell ( echo "$(MAKE_VERSION)" ; echo "$(REQUIRED_MAKE_VERSION)" ) | sort -t. -n | head -1),$(REQUIRED_MAKE_VERSION))
+$(error GNU make version $(REQUIRED_MAKE_VERSION) required)
+endif
+
 CFLAGS=-Wall -g -D_GNU_SOURCE
 
 SRCS=base.c buffer.c buffer_test.c thread.c tasklet.c application.c queue.c poll.c socket.c echo_server.c tasklet_test.c queue_test.c socket_test.c echo_server_main.c http-parser/http_parser.c http_reader.c http_server.c http_server_main.c http_client.c skinny-mutex/skinny_mutex.c
@@ -38,7 +44,7 @@ ifneq "$(strip $(patsubst clean%,,$(patsubst %clean,,$(TESTABLEGOALS))))" ""
 endif
 
 objneeds_aux=$(if $(SAW_$(1)),,$(eval SAW_$(1):=1)$(eval SEEN+=$(1))$(foreach O,$(OBJNEEDS_$(1)),$(call objneeds_aux,$(O))))
-objneeds=$(eval SEEN:=)$(call objneeds_aux,$(1))$(foreach O,$(SEEN),$(eval undefine SAW_$(O)))$(SEEN)$(eval undefine SEEN)
+objneeds=$(eval SEEN:=)$(call objneeds_aux,$(1))$(foreach O,$(SEEN),$(eval SAW_$(O):=))$(SEEN)
 
 define build_executable
 $(1): $(call objneeds,$(or $(MAINOBJ_$(1)),$(1).o))

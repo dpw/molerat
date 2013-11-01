@@ -30,10 +30,10 @@ fundamentally Linux-specific about it, but no work has been done to
 port it to other platforms so far.
 
 There are no dependencies or prerequisites except for gcc and make, so
+after cloning the repo do:
 
+    $ git submodule update --init
     $ make
-
-should do it.
 
 The only demo applications so far is a rudimentary HTTP server and
 client.

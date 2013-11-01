@@ -394,15 +394,8 @@ void wait_list_set(struct wait_list *w, int n, bool_t broadcast)
 	mutex_unlock(&w->mutex);
 }
 
-static bool_t wait_list_add(struct wait_list *w, struct tasklet *t)
+static void wait_list_add(struct wait_list *w, struct tasklet *t)
 {
-	bool_t res = FALSE;
-
-	mutex_lock(&t->wait_mutex);
-
-	if (t->wait)
-		goto out;
-
 	t->wait = w;
 
 	if (!w->head) {
@@ -417,53 +410,71 @@ static bool_t wait_list_add(struct wait_list *w, struct tasklet *t)
 		t->wait_prev = prev;
 		head->wait_prev = prev->wait_next = t;
 	}
-
-	res = TRUE;
- out:
-	mutex_unlock(&t->wait_mutex);
-	return res;
 }
 
 void wait_list_wait(struct wait_list *w, struct tasklet *t)
 {
-	mutex_lock(&w->mutex);
-
 	for (;;) {
-		if (t->wait == w || wait_list_add(w, t))
+		int done = FALSE;
+
+		mutex_lock(&w->mutex);
+		mutex_lock(&t->wait_mutex);
+
+		if (!t->wait) {
+			wait_list_add(w, t);
+			done = TRUE;
+		}
+		else if (t->wait == w) {
+			done = TRUE;
+		}
+
+		mutex_unlock(&t->wait_mutex);
+		mutex_unlock(&w->mutex);
+
+		if (done)
 			break;
 
-		mutex_unlock(&w->mutex);
 		tasklet_unwait(t);
-		mutex_lock(&w->mutex);
 	}
 
-	mutex_unlock(&w->mutex);
 	t->waited = TRUE;
 }
 
 bool_t wait_list_down(struct wait_list *w, int n, struct tasklet *t)
 {
-	bool_t res = FALSE;
-
-	mutex_lock(&w->mutex);
+	int res;
 
 	for (;;) {
-		if (w->up_count >= n) {
-			w->up_count -= n;
-			res = TRUE;
-			break;
+		int done = FALSE;
+
+		mutex_lock(&w->mutex);
+		mutex_lock(&t->wait_mutex);
+
+		if (!t->wait || t->wait == w) {
+			if (w->up_count >= n) {
+				w->up_count -= n;
+				res = TRUE;
+			}
+			else {
+				if (t->wait != w)
+					wait_list_add(w, t);
+
+				t->waited = TRUE;
+				res = FALSE;
+			}
+
+			done = TRUE;
 		}
 
-		if (t->wait == w || wait_list_add(w, t))
+		mutex_unlock(&t->wait_mutex);
+		mutex_unlock(&w->mutex);
+
+		if (done)
 			break;
 
-		mutex_unlock(&w->mutex);
 		tasklet_unwait(t);
-		mutex_lock(&w->mutex);
 	}
 
-	mutex_unlock(&w->mutex);
-	t->waited = TRUE;
 	return res;
 }
 

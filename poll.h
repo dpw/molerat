@@ -15,24 +15,7 @@
 typedef short (*watched_fd_handler_t)(void *data, short got, short interest);
 
 struct watched_fd {
-	struct poll *poll;
-	int fd;
-
-	/* The sign of slot indicates what it refers to:
-	 *
-	 * >0: There is an entry in pollfds for the socket, at
-	 * pollfds[slot-1].
-	 *
-	 * <0: There is an entry in pollfd_updates for the socket, at
-	 * pollfds[~slot].  There may or may not be a pollfd entry
-	 * too (indicated by the poll_slot of the pollfd_update)
-	 *
-	 * 0: There is no pollfd or pollfd_update for this socket.
-	 */
-	int slot;
-
-	watched_fd_handler_t handle_events;
-	void *data;
+	struct watched_fd_info *info;
 };
 
 struct poll *poll_create(void);
@@ -41,7 +24,7 @@ void poll_destroy(struct poll *p);
 struct poll *poll_singleton(void);
 
 void watched_fd_init(struct watched_fd *w, struct poll *poll, int fd,
-		     watched_fd_handler_t handle_events, void *data);
+		     watched_fd_handler_t handler, void *data);
 void watched_fd_fini(struct watched_fd *w);
 
 /* This ors the given event bits into the interest bits. */

@@ -94,7 +94,7 @@ void check_pthreads(const char *name, int res)
 {
 	if (res) {
 		char buf[100];
-		safe_strerror(errno, buf, 100);
+		safe_strerror(res, buf, 100);
 		fprintf(stderr, "fatal error: %s: %s\n", name, buf);
 		abort();
 	}

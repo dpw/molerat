@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include "tasklet.h"
 
 void tasklet_init(struct tasklet *tasklet, struct mutex *mutex, void *data)

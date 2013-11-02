@@ -401,8 +401,10 @@ struct connector {
 	struct client_socket *socket;
 
 	struct tasklet tasklet;
+	struct wait_list connecting;
 	struct watched_fd watched_fd;
 	int fd;
+	int connected;
 	struct addrinfo *next_addrinfo;
 	struct addrinfo *addrinfos;
 	struct error err;
@@ -416,12 +418,12 @@ struct client_socket {
 static struct socket_ops client_socket_ops;
 
 static short connector_handle_events(void *v_c, short got, short interest);
-static void connector_connect(void *v_c);
-static void connector_connected(void *v_c);
-static void connector_error(void *v_c);
+static void start_connecting(struct connector *c);
+static void finish_connecting(void *v_c);
 
-static struct connector *connector_create(struct addrinfo *next_addrinfo,
-					  struct addrinfo *addrinfos)
+static struct client_socket *client_socket_create(
+						struct addrinfo *next_addrinfo,
+						struct addrinfo *addrinfos)
 {
 	struct connector *c = xalloc(sizeof *c);
 	struct client_socket *s = xalloc(sizeof *s);
@@ -429,7 +431,9 @@ static struct connector *connector_create(struct addrinfo *next_addrinfo,
 	c->socket = s;
 
 	tasklet_init(&c->tasklet, &s->base.mutex, c);
+	wait_list_init(&c->connecting, 0);
 	c->fd = -1;
+	c->connected = 0;
 	c->next_addrinfo = next_addrinfo;
 	c->addrinfos = addrinfos;
 	error_init(&c->err);
@@ -439,9 +443,10 @@ static struct connector *connector_create(struct addrinfo *next_addrinfo,
 
 	/* Start connecting */
 	mutex_lock(&s->base.mutex);
-	tasklet_now(&c->tasklet, connector_connect);
+	start_connecting(c);
+	tasklet_now(&c->tasklet, finish_connecting);
 
-	return c;
+	return s;
 }
 
 static void connector_destroy(struct connector *c)
@@ -452,6 +457,7 @@ static void connector_destroy(struct connector *c)
 		c->fd = -1;
 	}
 
+	wait_list_fini(&c->connecting);
 	tasklet_fini(&c->tasklet);
 	error_fini(&c->err);
 
@@ -461,12 +467,17 @@ static void connector_destroy(struct connector *c)
 	free(c);
 }
 
-static void connector_connect(void *v_c)
+static void start_connecting(struct connector *c)
 {
-	struct connector *c = v_c;
-
 	for (;;) {
-		struct addrinfo *ai;
+		struct addrinfo *ai = c->next_addrinfo;
+		if (!ai) {
+			/* Ran out of addresses to try, so we are done. We
+			   should have an error to report. */
+			assert(!error_ok(&c->err));
+			simple_socket_wake_all(&c->socket->base);
+			return;
+		}
 
 		/* If we have an existing connecting socket, dispose of it. */
 		if (c->fd >= 0) {
@@ -474,10 +485,6 @@ static void connector_connect(void *v_c)
 			close(c->fd);
 			c->fd = -1;
 		}
-
-		ai = c->next_addrinfo;
-		if (!ai)
-			break;
 
 		c->next_addrinfo = ai->ai_next;
 		error_reset(&c->err);
@@ -488,85 +495,79 @@ static void connector_connect(void *v_c)
 		watched_fd_init(&c->watched_fd, poll_singleton(), c->fd,
 				connector_handle_events, c);
 		if (connect(c->fd, ai->ai_addr, ai->ai_addrlen) >= 0) {
-			/* Immediately connected.  Can this actually
-			 * happen? */
-			tasklet_now(&c->tasklet, connector_connected);
-			goto out;
+			/* Immediately connected.  Not sure this can
+			   actually happen. */
+			wait_list_up(&c->connecting, 1);
+			return;
 		}
 		else if (blocked()) {
 			/* Writeability will indicate that the connection has
 			 * been established. */
 			watched_fd_set_interest(&c->watched_fd, POLLOUT);
-			goto out;
+			return;
 		}
 		else {
 			error_errno(&c->err, "connect");
 		}
 	}
+}
 
-	/* Ran out of addresses to try, so we are done. We should have
-	   an error to report. */
-	assert(!error_ok(&c->err));
-	simple_socket_wake_all(&c->socket->base);
+static void finish_connecting(void *v_c)
+{
+	struct connector *c = v_c;
+	struct client_socket *s = c->socket;
 
- out:
-	tasklet_stop(&c->tasklet);
-	mutex_unlock(&c->socket->base.mutex);
+	for (;;) {
+		if (!wait_list_down(&c->connecting, 1, &c->tasklet))
+			break;
+
+		if (c->connected) {
+			int fd = c->fd;
+			c->fd = -1;
+			watched_fd_fini(&c->watched_fd);
+			connector_destroy(c);
+			s->connector = NULL;
+			simple_socket_set_fd(&s->base, fd);
+			break;
+		}
+		else {
+			/* Got POLLERR */
+			int e;
+			socklen_t len = sizeof e;
+			const char *syscall = "connect";
+
+			if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &e, &len)) {
+				e = errno;
+				syscall = "getsockopt";
+			}
+
+			if (e) {
+				/* Stash the error and try another address */
+				error_errno_val(&c->err, e, syscall);
+				start_connecting(c);
+			}
+			else {
+				/* Stange, no error.  Continue to poll. */
+				watched_fd_set_interest(&c->watched_fd,
+							POLLOUT);
+			}
+		}
+	}
+
+	mutex_unlock(&s->base.mutex);
 }
 
 static short connector_handle_events(void *v_c, short got, short interest)
 {
 	struct connector *c = v_c;
 
-	if (got & POLLERR) {
-		tasklet_later(&c->tasklet, connector_error);
-		interest = 0;
-	}
-	else if (got & POLLOUT) {
-		tasklet_later(&c->tasklet, connector_connected);
+	if (got & (POLLOUT | POLLERR)) {
+		c->connected = (got == POLLOUT);
+		wait_list_up(&c->connecting, 1);
 		interest = 0;
 	}
 
 	return interest;
-}
-
-static void connector_connected(void *v_c)
-{
-	struct connector *c = v_c;
-	struct client_socket *s = c->socket;
-	int fd = c->fd;
-
-	c->fd = -1;
-	watched_fd_fini(&c->watched_fd);
-	connector_destroy(c);
-	s->connector = NULL;
-	simple_socket_set_fd(&s->base, fd);
-	mutex_unlock(&s->base.mutex);
-}
-
-static void connector_error(void *v_c)
-{
-	struct connector *c = v_c;
-	int e;
-	socklen_t len = sizeof e;
-	const char *syscall = "connect";
-
-	if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &e, &len)) {
-		e = errno;
-		syscall = "getsockopt";
-	}
-
-	if (e) {
-		/* Stash the error and try another address */
-		error_errno_val(&c->err, e, syscall);
-		tasklet_now(&c->tasklet, connector_connect);
-	}
-	else {
-		/* Hmmm, no error.  Continue to wait. */
-		tasklet_stop(&c->tasklet);
-		watched_fd_set_interest(&c->watched_fd, POLLOUT);
-		mutex_unlock(&c->socket->base.mutex);
-	}
 }
 
 static bool_t connector_ok(struct connector *c, struct error *err)
@@ -867,7 +868,6 @@ static struct socket *connect_address(struct socket_factory *gf,
 				      struct sockaddr *sa,
 				      struct error *err)
 {
-	struct connector *c;
 	struct addrinfo ai;
 
 	assert(gf->ops == &simple_socket_factory_ops);
@@ -881,8 +881,7 @@ static struct socket *connect_address(struct socket_factory *gf,
 	if (!ai.ai_addrlen)
 		return NULL;
 
-	c = connector_create(&ai, NULL);
-	return &c->socket->base.base;
+	return &client_socket_create(&ai, NULL)->base.base;
 }
 
 static struct socket *sf_connect(struct socket_factory *gf,
@@ -893,7 +892,6 @@ static struct socket *sf_connect(struct socket_factory *gf,
 	   glibc has a getaddrinfo_a, but for the sake of portability
 	   it might be better to farm it out to another thread. */
 
-	struct connector *c;
 	struct addrinfo hints;
 	struct addrinfo *ai;
 	int res;
@@ -911,8 +909,7 @@ static struct socket *sf_connect(struct socket_factory *gf,
 		return NULL;
 	}
 
-	c = connector_create(ai, ai);
-	return &c->socket->base.base;
+	return &client_socket_create(ai, ai)->base.base;
 }
 
 static int make_listening_socket(int family, int socktype, struct error *err)

@@ -228,7 +228,7 @@ static void test_connect_failure(void)
 
 	error_init(&err);
 
-	s = socket_factory_connect(sf, "127.0.0.1", "9998", &err);
+	s = socket_factory_connect(sf, "127.0.0.1", "9997", &err);
 	check_error(&err);
 
 	t = tester_create(s);
@@ -259,7 +259,7 @@ void test_gai_failure(void)
 int main(void)
 {
 	test_echo_direct();
-	test_echo_gai("localhost", "localhost", "9999");
+	test_echo_gai("localhost", "localhost", "9998");
 	test_echo_gai(NULL, "localhost", "9999");
 	test_connect_failure();
 	test_gai_failure();

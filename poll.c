@@ -282,10 +282,10 @@ static void poll_thread(void *v_p)
 
 	for (;;) {
 		mutex_lock(&p->mutex);
+		apply_updates(p, &pollfds);
 		if (p->thread_stopping)
 			break;
 
-		apply_updates(p, &pollfds);
 		p->thread_state = POLLING;
 		mutex_unlock(&p->mutex);
 

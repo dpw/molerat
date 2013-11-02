@@ -4,23 +4,28 @@
 #include "thread.h"
 #include "application.h"
 
-struct mutex app_mutex = MUTEX_INITIALIZER;
-struct cond app_cond;
-enum { NONE, RUNNING, STOP } app_state;
+static struct mutex app_mutex = MUTEX_INITIALIZER;
+static int app_running;
+static int app_runs;
+static int app_stops;
+static struct cond app_cond;
 
 void application_run(void)
 {
+	int run;
+
 	mutex_lock(&app_mutex);
-	assert(app_state == NONE);
-	app_state = RUNNING;
-	cond_init(&app_cond);
+	run = app_runs++;
 
-	do
+	if (!app_running++)
+		cond_init(&app_cond);
+
+	while (run >= app_stops)
 		cond_wait(&app_cond, &app_mutex);
-	while (app_state == RUNNING);
 
-	cond_fini(&app_cond);
-	app_state = NONE;
+	if (!--app_running)
+		cond_fini(&app_cond);
+
 	mutex_unlock(&app_mutex);
 }
 
@@ -28,10 +33,9 @@ void application_stop(void)
 {
 	mutex_lock(&app_mutex);
 
-	if (app_state == RUNNING) {
-		app_state = STOP;
+	app_stops++;
+	if (app_running)
 		cond_signal(&app_cond);
-	}
 
 	mutex_unlock(&app_mutex);
 }

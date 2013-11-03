@@ -35,7 +35,7 @@ after cloning the repo do:
     $ git submodule update --init
     $ make
 
-The only demo applications so far is a rudimentary HTTP server and
+The only demo application so far is a rudimentary HTTP server and
 client.
 
 Run the HTTP server with the port number to listen on:

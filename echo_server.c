@@ -12,6 +12,7 @@ struct echoer {
 	char *buf;
 	size_t len;
 	size_t pos;
+	bool_t verbose;
 };
 
 static void echoer_echo(void *v_e)
@@ -56,6 +57,8 @@ static void echoer_echo(void *v_e)
 
  done:
 	socket_close(e->socket, &err);
+	if (e->verbose)
+		fprintf(stderr, "Connection closed\n");
 
  error:
 	if (!error_ok(&err))
@@ -70,7 +73,7 @@ static void echoer_echo(void *v_e)
 }
 
 
-static struct echoer *echoer_create(struct socket *s)
+static struct echoer *echoer_create(struct socket *s, bool_t verbose)
 {
 	struct echoer *e = xalloc(sizeof *e);
 	mutex_init(&e->mutex);
@@ -78,6 +81,7 @@ static struct echoer *echoer_create(struct socket *s)
 	e->socket = s;
 	e->buf = xalloc(BUF_SIZE);
 	e->pos = e->len = 0;
+	e->verbose = verbose;
 
 	mutex_lock(&e->mutex);
 	tasklet_now(&e->tasklet, echoer_echo);
@@ -130,7 +134,7 @@ static void echo_server_accept(void *v_es)
 		if (es->verbose)
 			announce_connection(s);
 
-		echoer_create(s);
+		echoer_create(s, es->verbose);
 	}
 
 	if (!error_ok(&err))

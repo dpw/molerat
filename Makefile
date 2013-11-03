@@ -20,17 +20,19 @@ MAINOBJ_http_server=http_server_main.o
 .PHONY: all
 all: $(EXECUTABLES)
 
-clean_wildcards=$(1)*.o $(1)*.dep $(1)*~ $(1)*.gcov $(1)*.gcda $(1)*.gcno
+fileprefix=$(foreach F,$(2),$(if $(filter $(notdir $(F)),$(F)),$(1)$(F),$(dir $(F))$(1)$(notdir $(F))))
+dotify=$(call fileprefix,.,$(1))
+clean_wildcards=$(1)*.o $(call dotify,$(1)*.dep) $(1)*~ $(1)*.gcov $(1)*.gcda $(1)*.gcno
 
 .PHONY: clean
 clean:
 	rm -f $(call clean_wildcards) $(call clean_wildcards,http-parser/) $(call clean_wildcards,skinny-mutex/) $(EXECUTABLES)
 
-%.o %.c.dep : %.c
+%.o $(call dotify,%.c.dep) : %.c
 	$(COMPILE.c) -MD -o $*.o $<
-	@cat $*.d >$*.c.dep
-	@sed -e 's/#.*//;s/^[^:]*://;s/ *\\$$//;s/^ *//;/^$$/d;s/$$/ :/' <$*.d >>$*.c.dep
-	@sed -e 's/#.*//;s| /[^ ]*||g;s/ .*\.c//;/^ \\$$/d;s/^\([^ ][^ ]*\):/OBJNEEDS_\1=/;s/\([^ ]*\.h\)/\$$(HDROBJS_\1)/g' <$*.d >>$*.c.dep
+	@cat $*.d >$(call dotify,$*.c.dep)
+	@sed -e 's/#.*//;s/^[^:]*://;s/ *\\$$//;s/^ *//;/^$$/d;s/$$/ :/' <$*.d >>$(call dotify,$*.c.dep)
+	@sed -e 's/#.*//;s| /[^ ]*||g;s/ .*\.c//;/^ \\$$/d;s/^\([^ ][^ ]*\):/OBJNEEDS_\1=/;s/\([^ ]*\.h\)/\$$(HDROBJS_\1)/g' <$*.d >>$(call dotify,$*.c.dep)
 	@rm $*.d
 
 ifndef MAKECMDGOALS
@@ -40,7 +42,7 @@ TESTABLEGOALS:=$(MAKECMDGOALS)
 endif
 
 ifneq "$(strip $(patsubst clean%,,$(patsubst %clean,,$(TESTABLEGOALS))))" ""
--include $(SRCS:.c=.c.dep)
+-include $(foreach SRC,$(SRCS),$(call dotify,$(SRC).dep))
 endif
 
 objneeds_aux=$(if $(SAW_$(1)),,$(eval SAW_$(1):=1)$(eval SEEN+=$(1))$(foreach O,$(OBJNEEDS_$(1)),$(call objneeds_aux,$(O))))

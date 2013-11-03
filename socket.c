@@ -693,6 +693,8 @@ static struct server_socket_ops simple_server_socket_ops;
 static short accept_handle_events(void *v_s, short got, short interest)
 {
 	struct simple_server_socket *s = v_s;
+	(void)got;
+	(void)interest;
 	wait_list_broadcast(&s->accepting);
 	return 0;
 }

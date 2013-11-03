@@ -34,7 +34,7 @@ int main(int argc, char **argv)
 	if (!error_ok(&err))
 		goto out;
 
-	hs = http_server_create(ss, 1, &err);
+	hs = http_server_create(ss, 1);
 	if (!hs)
 		goto out;
 

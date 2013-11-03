@@ -141,7 +141,7 @@ static void echo_server_accept(void *v_es)
 }
 
 struct echo_server *echo_server_create(struct server_socket *s,
-				       bool_t verbose, struct error *err)
+				       bool_t verbose)
 {
 	struct echo_server *es = xalloc(sizeof *es);
 	mutex_init(&es->mutex);

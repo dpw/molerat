@@ -44,8 +44,9 @@ void growbuf_shift(struct growbuf *growbuf, size_t pos)
 void *growbuf_reserve(struct growbuf *growbuf, size_t need)
 {
 	assert(growbuf->limit);
+	assert(growbuf->limit - growbuf->end >= 0);
 
-	if (need > growbuf->limit - growbuf->end) {
+	if (need > (size_t)(growbuf->limit - growbuf->end)) {
 		size_t capacity = growbuf->limit - growbuf->start;
 		size_t used = growbuf->end - growbuf->start;
 
@@ -86,7 +87,7 @@ void growbuf_printf(struct growbuf *growbuf, const char *fmt, ...)
 	assert(growbuf->limit);
 
 	for (;;) {
-		size_t space = growbuf->limit - growbuf->end;
+		long space = growbuf->limit - growbuf->end;
 		va_list ap;
 		int res;
 

@@ -153,9 +153,7 @@ static void tester_check(struct tester *t)
 	}
 }
 
-static void test_echo_server(struct socket_factory *sf,
-			     struct echo_server *es,
-			     struct socket *s)
+static void test_echo_server(struct echo_server *es, struct socket *s)
 {
 	struct tester *t = tester_create(s);
 
@@ -179,16 +177,14 @@ static void test_echo_direct(void)
 	ss = socket_factory_unbound_server_socket(sf, &err);
 	check_error(&err);
 
-	es = echo_server_create(ss, 0, &err);
-	check_error(&err);
-
+	es = echo_server_create(ss, 0);
 	sas = echo_server_addresses(es, &err);
 	check_error(&err);
 
 	s = socket_factory_connect_address(sf, sas[0], &err);
 	check_error(&err);
 
-	test_echo_server(sf, es, s);
+	test_echo_server(es, s);
 
 	free_sockaddrs(sas);
 	error_fini(&err);
@@ -208,13 +204,11 @@ static void test_echo_gai(const char *bind_host, const char *connect_host,
 	ss = socket_factory_bound_server_socket(sf, bind_host, service, &err);
 	check_error(&err);
 
-	es = echo_server_create(ss, 0, &err);
-	check_error(&err);
-
+	es = echo_server_create(ss, 0);
 	s = socket_factory_connect(sf, connect_host, service, &err);
 	check_error(&err);
 
-	test_echo_server(sf, es, s);
+	test_echo_server(es, s);
 
 	error_fini(&err);
 }

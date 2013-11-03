@@ -36,7 +36,7 @@ struct connection {
 static void http_server_accept(void *v_hs);
 
 struct http_server *http_server_create(struct server_socket *s,
-				       bool_t verbose, struct error *err)
+				       bool_t verbose)
 {
 	struct http_server *hs;
 

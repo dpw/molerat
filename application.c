@@ -14,6 +14,7 @@ static thread_handle_t app_main_thread;
 static void wakey_wakey(int sig)
 {
 	/* No action is needed: signal delivery will wake the thread. */
+	(void)sig;
 }
 
 void application_prepare(void)

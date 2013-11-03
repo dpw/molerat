@@ -276,6 +276,7 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 	char *buf = v_buf;
 	char *buf_end = buf + len;
 	char *buf_pos;
+	ssize_t got;
 
 	if (r->state != HTTP_READER_BODY) {
 		assert(r->state == HTTP_READER_EOM);
@@ -328,8 +329,8 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 	}
 
 	buf_pos = r->body_end;
-	len = socket_read(r->socket, buf_pos, len, tasklet, err);
-	if (len < 0)
+	got = socket_read(r->socket, buf_pos, len, tasklet, err);
+	if (got < 0)
 		return -1;
 
 	/* If the socket read returns 0, we still need to feed that to
@@ -337,9 +338,9 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 
 	do {
 		size_t consumed = http_parser_execute(&r->parser, &r->settings,
-						      buf_pos, len);
+						      buf_pos, got);
 		buf_pos += consumed;
-		len -= consumed;
+		got -= consumed;
 		switch (HTTP_PARSER_ERRNO(&r->parser)) {
 		case HPE_OK:
 			break;
@@ -349,7 +350,7 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 			   over data to the prebody */
 			assert(r->state == HTTP_READER_EOM);
 			http_parser_pause(&r->parser, 0);
-			growbuf_append(&r->prebody, buf_pos, len);
+			growbuf_append(&r->prebody, buf_pos, got);
 			goto done;
 
 		default:
@@ -357,7 +358,7 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 			set_error_from_parser(r, err);
 			return -1;
 		}
-	} while (len > 0);
+	} while (got > 0);
 
  done:
 	/* All the data read from the socket has been parsed. */

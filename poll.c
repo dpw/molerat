@@ -176,7 +176,7 @@ struct pollfds {
 
 static void add_pollfd(struct pollfds *pollfds, struct watched_fd_info *info)
 {
-	int slot = pollfds->used++;
+	size_t slot = pollfds->used++;
 	size_t sz = pollfds->size;
 
 	if (slot == sz) {
@@ -242,7 +242,7 @@ static void apply_updates(struct poll *p, struct pollfds *pollfds)
 
 static void dispatch_events(struct pollfds *pollfds)
 {
-	long i;
+	size_t i;
 
 	for (i = 0; i < pollfds->used; i++) {
 		struct pollfd *pollfd = &pollfds->pollfds[i];

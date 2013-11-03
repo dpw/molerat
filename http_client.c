@@ -175,6 +175,7 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
+	application_prepare();
 	s = socket_factory_connect(sf, argv[1], argv[2], &err);
 	if (!error_ok(&err))
 		goto out;

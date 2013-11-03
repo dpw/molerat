@@ -35,6 +35,7 @@ int main(int argc, char **argv)
 	if (!error_ok(&err))
 		goto out;
 
+	application_prepare();
 	es = echo_server_create(ss, 1, &err);
 	if (!es)
 		goto out;

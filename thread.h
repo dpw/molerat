@@ -7,14 +7,26 @@
 #include "skinny-mutex/skinny_mutex.h"
 #include "base.h"
 
+typedef pthread_t thread_handle_t;
+static inline thread_handle_t thread_handle_current(void)
+{
+	return pthread_self();
+}
+
 struct thread {
-	pthread_t id;
+	thread_handle_t handle;
 	void *init;
 };
 
 void thread_init(struct thread *thr, void (*func)(void *data), void *data);
 void thread_fini(struct thread *thr);
-void thread_signal(struct thread *thr, int sig);
+
+static inline thread_handle_t thread_get_handle(struct thread *thr)
+{
+	return thr->handle;
+}
+
+void thread_signal(thread_handle_t thr, int sig);
 
 struct mutex {
 	skinny_mutex_t mutex;

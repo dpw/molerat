@@ -258,6 +258,7 @@ void test_gai_failure(void)
 
 int main(void)
 {
+	application_prepare();
 	test_echo_direct();
 	test_echo_gai("localhost", "localhost", "9998");
 	test_echo_gai(NULL, "localhost", "9999");

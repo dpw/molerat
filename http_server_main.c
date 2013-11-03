@@ -12,6 +12,7 @@ int main(int argc, char **argv)
 	struct http_server *hs = NULL;
 	int res = 0;
 
+	application_prepare();
 	error_init(&err);
 
 	switch (argc) {

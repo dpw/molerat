@@ -23,20 +23,20 @@ void thread_init(struct thread *thr, void (*func)(void *data), void *data)
 	params->func = func;
 	params->data = data;
 	check_pthreads("pthread_create",
-		       pthread_create(&thr->id, NULL,
+		       pthread_create(&thr->handle, NULL,
 				      thread_trampoline, params));
 	thr->init = xalloc(1);
 }
 
 void thread_fini(struct thread *thr)
 {
-	check_pthreads("pthread_join", pthread_join(thr->id, NULL));
+	check_pthreads("pthread_join", pthread_join(thr->handle, NULL));
 	free(thr->init);
 }
 
-void thread_signal(struct thread *thr, int sig)
+void thread_signal(thread_handle_t thr, int sig)
 {
-	check_pthreads("pthread_kill", pthread_kill(thr->id, sig));
+	check_pthreads("pthread_kill", pthread_kill(thr, sig));
 }
 
 void mutex_init(struct mutex *m)

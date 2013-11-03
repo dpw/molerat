@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <assert.h>
 
 #include "base.h"
@@ -8,24 +9,66 @@ static struct mutex app_mutex = MUTEX_INITIALIZER;
 static int app_running;
 static int app_runs;
 static int app_stops;
-static struct cond app_cond;
+static thread_handle_t app_main_thread;
+
+static void wakey_wakey(int sig)
+{
+	/* No action is needed: signal delivery will wake the thread. */
+}
+
+void application_prepare(void)
+{
+	sigset_t block;
+
+	sigemptyset(&block);
+	sigaddset(&block, PRIVATE_SIGNAL);
+	sigaddset(&block, SIGINT);
+	check_pthreads("pthread_sigmask",
+		       pthread_sigmask(SIG_BLOCK, &block, NULL));
+
+	check_syscall("signal", signal(PRIVATE_SIGNAL, wakey_wakey) != SIG_ERR);
+}
+
+void application_assert_prepared(void)
+{
+	sigset_t blocked;
+	struct sigaction sa;
+
+	check_pthreads("pthread_sigmask",
+		       pthread_sigmask(SIG_SETMASK, NULL, &blocked));
+	assert(sigismember(&blocked, PRIVATE_SIGNAL));
+	assert(sigismember(&blocked, SIGINT));
+
+	check_syscall("sigaction", !sigaction(PRIVATE_SIGNAL, NULL, &sa));
+	assert(sa.sa_handler == wakey_wakey);
+}
 
 void application_run(void)
 {
 	int run;
+	sigset_t sigs;
+	int sig;
+
+	sigemptyset(&sigs);
+	sigaddset(&sigs, PRIVATE_SIGNAL);
+	sigaddset(&sigs, SIGINT);
 
 	mutex_lock(&app_mutex);
 	run = app_runs++;
 
 	if (!app_running++)
-		cond_init(&app_cond);
+		app_main_thread = thread_handle_current();
 
-	while (run >= app_stops)
-		cond_wait(&app_cond, &app_mutex);
+	while (run >= app_stops) {
+		mutex_unlock(&app_mutex);
+		check_pthreads("sigwait", sigwait(&sigs, &sig));
+		mutex_lock(&app_mutex);
 
-	if (!--app_running)
-		cond_fini(&app_cond);
+		if (sig == SIGINT)
+			break;
+	}
 
+	app_running--;
 	mutex_unlock(&app_mutex);
 }
 
@@ -35,7 +78,7 @@ void application_stop(void)
 
 	app_stops++;
 	if (app_running)
-		cond_signal(&app_cond);
+		thread_signal(app_main_thread, PRIVATE_SIGNAL);
 
 	mutex_unlock(&app_mutex);
 }

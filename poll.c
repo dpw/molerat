@@ -5,6 +5,7 @@
 #include "thread.h"
 #include "tasklet.h"
 #include "poll.h"
+#include "application.h"
 
 struct poll {
 	struct mutex mutex;
@@ -37,7 +38,7 @@ void poll_destroy(struct poll *p)
 	if (p->thread_state != NONE) {
 		p->thread_stopping = TRUE;
 		p->thread_state = PROCESSING;
-		thread_signal(&p->thread, SIGUSR1);
+		thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
 		mutex_unlock(&p->mutex);
 		thread_fini(&p->thread);
 		mutex_lock(&p->mutex);
@@ -115,7 +116,8 @@ static void updated(struct watched_fd_info *info)
 		if (p->thread_state == NONE)
 			thread_init(&p->thread, poll_thread, p);
 		else
-			thread_signal(&p->thread, SIGUSR1);
+			thread_signal(thread_get_handle(&p->thread),
+				      PRIVATE_SIGNAL);
 
 		p->thread_state = PROCESSING;
 	}
@@ -265,8 +267,10 @@ static void poll_thread(void *v_p)
 {
 	struct poll *p = v_p;
 	struct run_queue *runq = run_queue_create();
-	sigset_t oldset, blockset;
+	sigset_t sigmask;
 	struct pollfds pollfds;
+
+	application_assert_prepared();
 
 	pollfds.used = 0;
 	pollfds.size = 10;
@@ -275,10 +279,9 @@ static void poll_thread(void *v_p)
 
 	run_queue_target(runq);
 
-	sigemptyset(&blockset);
-	sigaddset(&blockset, SIGUSR1);
 	check_pthreads("pthread_sigmask",
-		       pthread_sigmask(SIG_BLOCK, &blockset, &oldset));
+		       pthread_sigmask(SIG_SETMASK, NULL, &sigmask));
+	sigdelset(&sigmask, PRIVATE_SIGNAL);
 
 	for (;;) {
 		mutex_lock(&p->mutex);
@@ -289,7 +292,7 @@ static void poll_thread(void *v_p)
 		p->thread_state = POLLING;
 		mutex_unlock(&p->mutex);
 
-		if (ppoll(pollfds.pollfds, pollfds.used, NULL, &oldset) < 0) {
+		if (ppoll(pollfds.pollfds, pollfds.used, NULL, &sigmask) < 0) {
 			if (errno != EINTR)
 				check_syscall("ppoll", 0);
 
@@ -310,13 +313,6 @@ static void poll_thread(void *v_p)
 	free(pollfds.infos);
 }
 
-static void wake_signal(int sig)
-{
-	/* No action is needed.  Signal delivery will cause ppoll to
-	   return with EINTR. */
-}
-
-
 static struct poll *singleton;
 
 static void singleton_cleanup(void)
@@ -332,9 +328,6 @@ struct poll *poll_singleton(void)
 		struct poll *p = singleton;
 		if (p)
 			return p;
-
-		check_syscall("signal",
-			      signal(SIGUSR1, wake_signal) != SIG_ERR);
 
 		p = poll_create();
 		if (__sync_bool_compare_and_swap(&singleton, NULL, p)) {

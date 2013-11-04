@@ -28,6 +28,7 @@ void application_prepare(void)
 		       pthread_sigmask(SIG_BLOCK, &block, NULL));
 
 	check_syscall("signal", signal(PRIVATE_SIGNAL, wakey_wakey) != SIG_ERR);
+	check_syscall("signal", signal(SIGPIPE, SIG_IGN) != SIG_ERR);
 }
 
 void application_assert_prepared(void)

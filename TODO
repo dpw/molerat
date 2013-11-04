@@ -1,4 +1,8 @@
-restore SIGINT handling (main thread can handle this)
+timers
+
+Check mutex ownership on tasklet exit?
+
+tasklet_now -> tasklet_goto
 
 thread API probably better pointer-based
 
@@ -8,18 +12,6 @@ progress (>0), error, closed)
 thorough testing of http reader (byte-by-byte parsing, large bodies,
 prebody-body-prebody handling)
 
-EPIPE/SIGPIPE handling.  At least make it an error.
-
 Fix the spurious accept issue in socket.c
 
 ERROR_INVALID to replace many asserts
-
-When a client_socket is connected, its ops can be set to the
-simple_socket ops.
-
-tasklet: current_stopped and current_requeue should be combined into a
-single state flag.
-
-Refine thread.c lock held checking (use thread id)
-
-Make test programs timeout

@@ -14,18 +14,14 @@
 
 typedef short (*watched_fd_handler_t)(void *data, short got, short interest);
 
-struct watched_fd {
-	struct watched_fd_info *info;
-};
-
 struct poll *poll_create(void);
 void poll_destroy(struct poll *p);
 
 struct poll *poll_singleton(void);
 
-void watched_fd_init(struct watched_fd *w, struct poll *poll, int fd,
-		     watched_fd_handler_t handler, void *data);
-void watched_fd_fini(struct watched_fd *w);
+struct watched_fd *watched_fd_create(struct poll *poll, int fd,
+				     watched_fd_handler_t handler, void *data);
+void watched_fd_destroy(struct watched_fd *w);
 
 /* This ors the given event bits into the interest bits. */
 void watched_fd_set_interest(struct watched_fd *w, short event);

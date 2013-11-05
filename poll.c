@@ -16,7 +16,7 @@ struct poll {
 
 	/* Non-null if there are watched_fd_infos that need syncing
 	   into pollfds. */
-	struct watched_fd_info *updates;
+	struct watched_fd *updates;
 };
 
 struct poll *poll_create(void)
@@ -50,12 +50,11 @@ void poll_destroy(struct poll *p)
 	free(p);
 }
 
-/* There is a watched_fd_info for an fd as long as either a watched_fd
-   exists or there is an entry in pollfds. */
-struct watched_fd_info {
+struct watched_fd {
 	struct poll *poll;
 
-	/* The fd, or -1 if the watched_fd went away. */
+	/* The fd, or -1 if the client called watched_fd_destroy went
+	   away. */
 	int fd;
 	short interest;
 
@@ -67,48 +66,50 @@ struct watched_fd_info {
 
 	/* Prev is non-NULL if this entry was updated and needs to be
 	   synced into pollfds. */
-	struct watched_fd_info *prev;
-	struct watched_fd_info *next;
+	struct watched_fd *prev;
+	struct watched_fd *next;
 };
 
-void watched_fd_init(struct watched_fd *w, struct poll *poll, int fd,
-		     watched_fd_handler_t handler, void *data)
+struct watched_fd *watched_fd_create(struct poll *poll, int fd,
+				     watched_fd_handler_t handler, void *data)
 {
-	struct watched_fd_info *info;
+	struct watched_fd *w;
 
 	assert(fd >= 0);
 
-	w->info = info = xalloc(sizeof *info);
-	info->poll = poll;
-	info->fd = fd;
-	info->interest = 0;
-	info->handler = handler;
-	info->data = data;
-	info->slot = -1;
-	info->prev = NULL;
+	w = xalloc(sizeof *w);
+	w->poll = poll;
+	w->fd = fd;
+	w->interest = 0;
+	w->handler = handler;
+	w->data = data;
+	w->slot = -1;
+	w->prev = NULL;
+
+	return w;
 }
 
 static void poll_thread(void *v_p);
 
-static void updated(struct watched_fd_info *info)
+static void updated(struct watched_fd *w)
 {
 	struct poll *p;
 
-	if (info->prev)
+	if (w->prev)
 		/* Already on the updates list */
 		return;
 
-	p = info->poll;
+	p = w->poll;
 	if (p->updates) {
-		struct watched_fd_info *head = p->updates;
-		struct watched_fd_info *tail = head->prev;
+		struct watched_fd *head = p->updates;
+		struct watched_fd *tail = head->prev;
 
-		info->prev = tail;
-		info->next = head;
-		head->prev = tail->next = info;
+		w->prev = tail;
+		w->next = head;
+		head->prev = tail->next = w;
 	}
 	else {
-		p->updates = info->prev = info->next = info;
+		p->updates = w->prev = w->next = w;
 	}
 
 	/* Poke the poll thread */
@@ -123,35 +124,34 @@ static void updated(struct watched_fd_info *info)
 	}
 }
 
-void watched_fd_fini(struct watched_fd *w)
+void watched_fd_destroy(struct watched_fd *w)
 {
-	struct watched_fd_info *info = w->info;
-	struct poll *p = info->poll;
+	struct poll *p = w->poll;
 
 	mutex_lock(&p->mutex);
 
-	if (info->slot < 0) {
-		struct poll *p = info->poll;
+	if (w->slot < 0) {
+		struct poll *p = w->poll;
 
-		/* Remove info from the updates list */
-		if (info->prev) {
-			if (info->prev == info) {
+		/* Remove w from the updates list */
+		if (w->prev) {
+			if (w->prev == w) {
 				p->updates = NULL;
 			}
 			else {
-				info->next->prev = info->prev;
-				info->prev->next = info->next;
-				if (p->updates == info)
-					p->updates = info->next;
+				w->next->prev = w->prev;
+				w->prev->next = w->next;
+				if (p->updates == w)
+					p->updates = w->next;
 			}
 		}
 
-		free(info);
+		free(w);
 	}
 	else {
-		info->fd = -1;
-		info->interest = 0;
-		updated(info);
+		w->fd = -1;
+		w->interest = 0;
+		updated(w);
 	}
 
 	mutex_unlock(&p->mutex);
@@ -159,22 +159,20 @@ void watched_fd_fini(struct watched_fd *w)
 
 void watched_fd_set_interest(struct watched_fd *w, short interest)
 {
-	struct watched_fd_info *info = w->info;
-
-	mutex_lock(&info->poll->mutex);
-	info->interest |= interest;
-	updated(info);
-	mutex_unlock(&info->poll->mutex);
+	mutex_lock(&w->poll->mutex);
+	w->interest |= interest;
+	updated(w);
+	mutex_unlock(&w->poll->mutex);
 }
 
 struct pollfds {
 	struct pollfd *pollfds;
-	struct watched_fd_info **infos;
+	struct watched_fd **watched_fds;
 	size_t size;
 	size_t used;
 };
 
-static void add_pollfd(struct pollfds *pollfds, struct watched_fd_info *info)
+static void add_pollfd(struct pollfds *pollfds, struct watched_fd *w)
 {
 	size_t slot = pollfds->used++;
 	size_t sz = pollfds->size;
@@ -184,58 +182,58 @@ static void add_pollfd(struct pollfds *pollfds, struct watched_fd_info *info)
 		pollfds->size = sz *= 2;
 		pollfds->pollfds = xrealloc(pollfds->pollfds,
 					    sz * sizeof *pollfds->pollfds);
-		pollfds->infos = xrealloc(pollfds->infos,
-					  sz * sizeof *pollfds->infos);
+		pollfds->watched_fds = xrealloc(pollfds->watched_fds,
+					    sz * sizeof *pollfds->watched_fds);
 	}
 
-	pollfds->pollfds[slot].fd = info->fd;
-	pollfds->pollfds[slot].events = info->interest;
-	pollfds->infos[slot] = info;
-	info->slot = slot;
+	pollfds->pollfds[slot].fd = w->fd;
+	pollfds->pollfds[slot].events = w->interest;
+	pollfds->watched_fds[slot] = w;
+	w->slot = slot;
 }
 
-static void remove_pollfd(struct pollfds *pollfds, struct watched_fd_info *info)
+static void remove_pollfd(struct pollfds *pollfds, struct watched_fd *w)
 {
-	long slot = info->slot;
+	long slot = w->slot;
 
 	/* Copy the last pollfd over the one to be deleted */
 	pollfds->used--;
 	pollfds->pollfds[slot] = pollfds->pollfds[pollfds->used];
-	pollfds->infos[slot] = pollfds->infos[pollfds->used];
-	pollfds->infos[slot]->slot = slot;
+	pollfds->watched_fds[slot] = pollfds->watched_fds[pollfds->used];
+	pollfds->watched_fds[slot]->slot = slot;
 
-	if (info->fd < 0)
-		free(info);
+	if (w->fd < 0)
+		free(w);
 	else
-		info->slot = -1;
+		w->slot = -1;
 }
 
 static void apply_updates(struct poll *p, struct pollfds *pollfds)
 {
-	struct watched_fd_info *head = p->updates;
-	struct watched_fd_info *info, *next;
+	struct watched_fd *head = p->updates;
+	struct watched_fd *w, *next;
 
 	if (!head)
 		return;
 
-	info = head;
+	w = head;
 	do {
-		info->prev = NULL;
-		next = info->next;
+		w->prev = NULL;
+		next = w->next;
 
-		if (info->slot < 0) {
-			if (info->interest)
-				add_pollfd(pollfds, info);
+		if (w->slot < 0) {
+			if (w->interest)
+				add_pollfd(pollfds, w);
 		}
-		else if (info->interest) {
-			pollfds->pollfds[info->slot].events = info->interest;
+		else if (w->interest) {
+			pollfds->pollfds[w->slot].events = w->interest;
 		}
 		else {
-			remove_pollfd(pollfds, info);
+			remove_pollfd(pollfds, w);
 		}
 
-		info = next;
-	} while (info != head);
+		w = next;
+	} while (w != head);
 
 	p->updates = NULL;
 }
@@ -246,20 +244,19 @@ static void dispatch_events(struct pollfds *pollfds)
 
 	for (i = 0; i < pollfds->used; i++) {
 		struct pollfd *pollfd = &pollfds->pollfds[i];
-		struct watched_fd_info *info = pollfds->infos[i];
+		struct watched_fd *w = pollfds->watched_fds[i];
 
-		/* Dangling watched_fd_infos will be cleaned up in the
+		/* Dangling watched_fds will be cleaned up in the
 		   next apply_updates pass */
-		if (!pollfd->revents || info->fd < 0)
+		if (!pollfd->revents || w->fd < 0)
 			continue;
 
-		info->interest = pollfd->events
-			= info->handler(info->data, pollfd->revents,
-					info->interest);
+		w->interest = pollfd->events
+			= w->handler(w->data, pollfd->revents, w->interest);
 
-		if (info->interest == 0)
+		if (w->interest == 0)
 			/* Add an update to remove this pollfd */
-			updated(info);
+			updated(w);
 	}
 }
 
@@ -275,7 +272,8 @@ static void poll_thread(void *v_p)
 	pollfds.used = 0;
 	pollfds.size = 10;
 	pollfds.pollfds = xalloc(pollfds.size * sizeof *pollfds.pollfds);
-	pollfds.infos = xalloc(pollfds.size * sizeof *pollfds.infos);
+	pollfds.watched_fds
+		= xalloc(pollfds.size * sizeof *pollfds.watched_fds);
 
 	run_queue_target(runq);
 
@@ -310,7 +308,7 @@ static void poll_thread(void *v_p)
 	mutex_unlock(&p->mutex);
 	assert(!pollfds.used);
 	free(pollfds.pollfds);
-	free(pollfds.infos);
+	free(pollfds.watched_fds);
 }
 
 static struct poll *singleton;

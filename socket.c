@@ -176,14 +176,14 @@ static short simple_socket_handle_events(void *v_s, short got, short interest)
 {
 	struct simple_socket *s = v_s;
 
-	if (got & POLLIN) {
+	if (got & POLL_EVENT_IN) {
 		wait_list_broadcast(&s->reading);
-		interest &= ~POLLIN;
+		interest &= ~POLL_EVENT_IN;
 	}
 
-	if (got & POLLOUT) {
+	if (got & POLL_EVENT_OUT) {
 		wait_list_broadcast(&s->writing);
-		interest &= ~POLLOUT;
+		interest &= ~POLL_EVENT_OUT;
 	}
 
 	return interest;
@@ -290,7 +290,7 @@ static ssize_t simple_socket_read_locked(struct simple_socket *s,
 
 		if (blocked()) {
 			wait_list_wait(&s->reading, t);
-			watched_fd_set_interest(s->watched_fd, POLLIN);
+			watched_fd_set_interest(s->watched_fd, POLL_EVENT_IN);
 		}
 		else {
 			error_errno(e, "read");
@@ -328,7 +328,7 @@ static ssize_t simple_socket_write_locked(struct simple_socket *s,
 
 		if (blocked()) {
 			wait_list_wait(&s->writing, t);
-			watched_fd_set_interest(s->watched_fd, POLLOUT);
+			watched_fd_set_interest(s->watched_fd, POLL_EVENT_OUT);
 		}
 		else {
 			error_errno(e, "write");
@@ -503,7 +503,7 @@ static void start_connecting(struct connector *c)
 		else if (blocked()) {
 			/* Writeability will indicate that the connection has
 			 * been established. */
-			watched_fd_set_interest(c->watched_fd, POLLOUT);
+			watched_fd_set_interest(c->watched_fd, POLL_EVENT_OUT);
 			return;
 		}
 		else {
@@ -555,7 +555,7 @@ static void finish_connecting(void *v_c)
 			else {
 				/* Stange, no error.  Continue to poll. */
 				watched_fd_set_interest(c->watched_fd,
-							POLLOUT);
+							POLL_EVENT_OUT);
 			}
 		}
 	}
@@ -567,8 +567,8 @@ static short connector_handle_events(void *v_c, short got, short interest)
 {
 	struct connector *c = v_c;
 
-	if (got & (POLLOUT | POLLERR)) {
-		c->connected = (got == POLLOUT);
+	if (got & (POLL_EVENT_OUT | POLL_EVENT_ERR)) {
+		c->connected = (got == POLL_EVENT_OUT);
 		wait_list_up(&c->connecting, 1);
 		interest = 0;
 	}
@@ -805,7 +805,7 @@ static struct socket *simple_server_socket_accept(struct server_socket *gs,
 
 	/* No sockets ready, so wait. */
 	for (i = 0; i < s->n_fds; i++)
-		watched_fd_set_interest(s->fds[i].watched_fd, POLLIN);
+		watched_fd_set_interest(s->fds[i].watched_fd, POLL_EVENT_IN);
 
 	wait_list_wait(&s->accepting, t);
 

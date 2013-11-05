@@ -7,6 +7,33 @@
 #include "poll.h"
 #include "application.h"
 
+/* This code to convert between the system event bitsets and our
+   bitsets looks cumbersome, but compiles down to the simple bitwise
+   instructions you would expect. */
+
+#define ASSERT_SINGLE_BIT(bit) typedef char assert_single_bit_##bit[!((bit)&((bit)-1))*2-1]
+#define TRANSLATE_BIT(val, from, to) ((from) > (to) ? ((val) & (from)) / ((from) / (to)) : ((val) & (from)) * ((to) / (from)))
+
+/* Translate an event set to the system representation */
+static unsigned int events_to_system(unsigned int events)
+{
+	ASSERT_SINGLE_BIT(POLLIN);
+	ASSERT_SINGLE_BIT(POLLOUT);
+	ASSERT_SINGLE_BIT(POLLERR);
+
+	return TRANSLATE_BIT(events, POLL_EVENT_IN, POLLIN)
+		| TRANSLATE_BIT(events, POLL_EVENT_OUT, POLLOUT)
+		| TRANSLATE_BIT(events, POLL_EVENT_ERR, POLLERR);
+}
+
+/* Translate an event set from the system representation */
+static unsigned int events_from_system(unsigned int events)
+{
+	return TRANSLATE_BIT(events, POLLIN, POLL_EVENT_IN)
+		| TRANSLATE_BIT(events, POLLOUT, POLL_EVENT_OUT)
+		| TRANSLATE_BIT(events, POLLERR, POLL_EVENT_ERR);
+}
+
 struct poll {
 	struct mutex mutex;
 
@@ -187,7 +214,7 @@ static void add_pollfd(struct pollfds *pollfds, struct watched_fd *w)
 	}
 
 	pollfds->pollfds[slot].fd = w->fd;
-	pollfds->pollfds[slot].events = w->interest;
+	pollfds->pollfds[slot].events = events_to_system(w->interest);
 	pollfds->watched_fds[slot] = w;
 	w->slot = slot;
 }
@@ -226,7 +253,8 @@ static void apply_updates(struct poll *p, struct pollfds *pollfds)
 				add_pollfd(pollfds, w);
 		}
 		else if (w->interest) {
-			pollfds->pollfds[w->slot].events = w->interest;
+			pollfds->pollfds[w->slot].events
+				= events_to_system(w->interest);
 		}
 		else {
 			remove_pollfd(pollfds, w);
@@ -251,8 +279,10 @@ static void dispatch_events(struct pollfds *pollfds)
 		if (!pollfd->revents || w->fd < 0)
 			continue;
 
-		w->interest = pollfd->events
-			= w->handler(w->data, pollfd->revents, w->interest);
+		w->interest = w->handler(w->data,
+					 events_from_system(pollfd->revents),
+					 w->interest);
+		pollfd->events = events_to_system(w->interest);
 
 		if (w->interest == 0)
 			/* Add an update to remove this pollfd */

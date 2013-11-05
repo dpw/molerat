@@ -1,11 +1,16 @@
 #ifndef MOLERAT_POLL_H
 #define MOLERAT_POLL_H
 
-/* You probablu shouldn't be using this directly!  socket.h provides a
+/* You probably shouldn't be using this directly!  socket.h provides a
  * higher-level interface onto sockets. */
 
-/* For POLLIN, POLLOUT, etc. */
-#include <poll.h>
+/* Event bits */
+
+enum {
+	POLL_EVENT_IN = 1,
+	POLL_EVENT_OUT = 4,
+	POLL_EVENT_ERR = 8
+};
 
 /* A handler takes the event bits actually recieved, and the exiting
  * interest set, and returns the new interest set. Note that the

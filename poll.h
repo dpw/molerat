@@ -17,7 +17,7 @@ enum {
  * handler gets called with the poll lock held. Be careful to avoid
  * deadlock! */
 
-typedef short (*watched_fd_handler_t)(void *data, short got, short interest);
+typedef void (*watched_fd_handler_t)(void *data, unsigned int events);
 
 struct poll *poll_create(void);
 void poll_destroy(struct poll *p);

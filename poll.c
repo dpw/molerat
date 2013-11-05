@@ -219,9 +219,9 @@ static void add_pollfd(struct pollfds *pollfds, struct watched_fd *w)
 	w->slot = slot;
 }
 
-static void remove_pollfd(struct pollfds *pollfds, struct watched_fd *w)
+static void remove_pollfd(struct pollfds *pollfds, size_t slot)
 {
-	long slot = w->slot;
+	struct watched_fd *w = pollfds->watched_fds[slot];
 
 	/* Copy the last pollfd over the one to be deleted */
 	pollfds->used--;
@@ -257,7 +257,7 @@ static void apply_updates(struct poll *p, struct pollfds *pollfds)
 				= events_to_system(w->interest);
 		}
 		else {
-			remove_pollfd(pollfds, w);
+			remove_pollfd(pollfds, w->slot);
 		}
 
 		w = next;
@@ -270,23 +270,20 @@ static void dispatch_events(struct pollfds *pollfds)
 {
 	size_t i;
 
-	for (i = 0; i < pollfds->used; i++) {
+	for (i = 0; i < pollfds->used;) {
 		struct pollfd *pollfd = &pollfds->pollfds[i];
 		struct watched_fd *w = pollfds->watched_fds[i];
 
 		/* Dangling watched_fds will be cleaned up in the
 		   next apply_updates pass */
-		if (!pollfd->revents || w->fd < 0)
+		if (!pollfd->revents || w->fd < 0) {
+			i++;
 			continue;
+		}
 
-		w->interest = w->handler(w->data,
-					 events_from_system(pollfd->revents),
-					 w->interest);
-		pollfd->events = events_to_system(w->interest);
-
-		if (w->interest == 0)
-			/* Add an update to remove this pollfd */
-			updated(w);
+		w->handler(w->data, events_from_system(pollfd->revents));
+		w->interest = 0;
+		remove_pollfd(pollfds, i);
 	}
 }
 

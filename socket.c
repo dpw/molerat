@@ -172,21 +172,15 @@ struct simple_socket {
 
 static struct socket_ops simple_socket_ops;
 
-static short simple_socket_handle_events(void *v_s, short got, short interest)
+static void simple_socket_handle_events(void *v_s, unsigned int events)
 {
 	struct simple_socket *s = v_s;
 
-	if (got & POLL_EVENT_IN) {
+	if (events & POLL_EVENT_IN)
 		wait_list_broadcast(&s->reading);
-		interest &= ~POLL_EVENT_IN;
-	}
 
-	if (got & POLL_EVENT_OUT) {
+	if (events & POLL_EVENT_OUT)
 		wait_list_broadcast(&s->writing);
-		interest &= ~POLL_EVENT_OUT;
-	}
-
-	return interest;
 }
 
 static void simple_socket_init(struct simple_socket *s,
@@ -417,7 +411,7 @@ struct client_socket {
 
 static struct socket_ops client_socket_ops;
 
-static short connector_handle_events(void *v_c, short got, short interest);
+static void connector_handle_events(void *v_c, unsigned int events);
 static void start_connecting(struct connector *c);
 static void finish_connecting(void *v_c);
 
@@ -563,17 +557,14 @@ static void finish_connecting(void *v_c)
 	mutex_unlock(&s->base.mutex);
 }
 
-static short connector_handle_events(void *v_c, short got, short interest)
+static void connector_handle_events(void *v_c, unsigned int events)
 {
 	struct connector *c = v_c;
 
-	if (got & (POLL_EVENT_OUT | POLL_EVENT_ERR)) {
-		c->connected = (got == POLL_EVENT_OUT);
+	if (events & (POLL_EVENT_OUT | POLL_EVENT_ERR)) {
+		c->connected = (events == POLL_EVENT_OUT);
 		wait_list_up(&c->connecting, 1);
-		interest = 0;
 	}
-
-	return interest;
 }
 
 static bool_t connector_ok(struct connector *c, struct error *err)
@@ -696,13 +687,11 @@ struct server_fd {
 
 static struct server_socket_ops simple_server_socket_ops;
 
-static short accept_handle_events(void *v_s, short got, short interest)
+static void accept_handle_events(void *v_s, unsigned int events)
 {
 	struct simple_server_socket *s = v_s;
-	(void)got;
-	(void)interest;
+	(void)events;
 	wait_list_broadcast(&s->accepting);
-	return 0;
 }
 
 static struct simple_server_socket *simple_server_socket_create(int *fds,

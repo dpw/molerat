@@ -1,3 +1,5 @@
+epoll
+
 timers
 
 Check mutex ownership on tasklet exit?

@@ -1,6 +1,7 @@
 timers
 
 Check mutex ownership on tasklet exit?
+Refine thread.c lock held checking (use thread id)
 
 tasklet_now -> tasklet_goto
 
@@ -15,3 +16,8 @@ prebody-body-prebody handling)
 Fix the spurious accept issue in socket.c
 
 ERROR_INVALID to replace many asserts
+
+tasklet: current_stopped and current_requeue should be combined into a
+single state flag.
+
+Make test programs timeout

@@ -528,6 +528,12 @@ static void finish_connecting(void *v_c)
 			connector_destroy(c);
 			s->connector = NULL;
 			simple_socket_set_fd(&s->base, fd);
+
+			/* Access to the ops pointer is not locked.
+			 * But it is fine if some threads continue to
+			 * use the old client_socket_ops value. */
+			s->base.base.ops = &simple_socket_ops;
+
 			break;
 		}
 		else {

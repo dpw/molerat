@@ -248,14 +248,15 @@ static void simple_socket_wake_all(struct simple_socket *s)
 	wait_list_broadcast(&s->writing);
 }
 
-static void simple_socket_set_fd(struct simple_socket *s, int fd)
+static void simple_socket_set_fd(struct simple_socket *s, int fd,
+				 struct watched_fd *watched_fd)
 {
 	assert(s->fd < 0);
 	assert(fd >= 0);
 
 	s->fd = fd;
-	s->watched_fd = watched_fd_create(poll_singleton(), fd,
-					  simple_socket_handle_events, s);
+	s->watched_fd = watched_fd;
+	watched_fd_set_handler(s->watched_fd, simple_socket_handle_events, s);
 	simple_socket_wake_all(s);
 }
 
@@ -517,11 +518,11 @@ static void finish_connecting(void *v_c)
 
 		if (c->connected) {
 			int fd = c->fd;
+			struct watched_fd *watched_fd = c->watched_fd;
 			c->fd = -1;
-			watched_fd_destroy(c->watched_fd);
 			connector_destroy(c);
 			s->connector = NULL;
-			simple_socket_set_fd(&s->base, fd);
+			simple_socket_set_fd(&s->base, fd, watched_fd);
 
 			/* Access to the ops pointer is not locked.
 			 * But it is fine if some threads continue to

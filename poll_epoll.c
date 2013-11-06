@@ -153,6 +153,15 @@ void watched_fd_set_interest(struct watched_fd *w, short interest)
 	w->interest = interest;
 }
 
+void watched_fd_set_handler(struct watched_fd *w, watched_fd_handler_t handler,
+			    void *data)
+{
+	mutex_lock(&w->poll->mutex);
+	w->handler = handler;
+	w->data = data;
+	mutex_unlock(&w->poll->mutex);
+}
+
 void watched_fd_destroy(struct watched_fd *w)
 {
 	struct poll *poll = w->poll;

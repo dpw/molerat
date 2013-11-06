@@ -31,4 +31,8 @@ void watched_fd_destroy(struct watched_fd *w);
 /* This ors the given event bits into the interest bits. */
 void watched_fd_set_interest(struct watched_fd *w, short event);
 
+/* Change the handler for the watched_fd */
+void watched_fd_set_handler(struct watched_fd *w, watched_fd_handler_t handler,
+			    void *data);
+
 #endif

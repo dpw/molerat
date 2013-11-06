@@ -84,8 +84,9 @@ void check_syscall(const char *name, int ok)
 {
 	if (!ok) {
 		char buf[100];
-		safe_strerror(errno, buf, 100);
-		fprintf(stderr, "fatal error: %s: %s\n", name, buf);
+		int en = errno;
+		safe_strerror(en, buf, 100);
+		fprintf(stderr, "fatal error: %s: %s (%d)\n", name, buf, en);
 		abort();
 	}
 }
@@ -95,7 +96,7 @@ void check_pthreads(const char *name, int res)
 	if (res) {
 		char buf[100];
 		safe_strerror(res, buf, 100);
-		fprintf(stderr, "fatal error: %s: %s\n", name, buf);
+		fprintf(stderr, "fatal error: %s: %s (%d)\n", name, buf, res);
 		abort();
 	}
 }
@@ -159,7 +160,8 @@ static void error_errno_val_va(struct error *e, int errnum, const char *fmt,
 		msg = NULL;
 
 	safe_strerror(errnum, buf, 100);
-	error_set(e, ERROR_OS, "%s: %s", msg ? msg : fallback_message, buf);
+	error_set(e, ERROR_OS, "%s: %s (%d)", msg ? msg : fallback_message,
+		  buf, errnum);
 	free(msg);
 }
 

@@ -22,6 +22,12 @@ void check_syscall(const char *name, int ok);
 /* Abort on a failed pthreads call */
 void check_pthreads(const char *name, int res);
 
+/* A high-resolution timestamp type */
+typedef uint64_t xtime_t;
+
+/* Get the current time */
+xtime_t time_now(void);
+
 struct error {
 	unsigned int category;
 	const char *message;

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <sys/time.h>
 
 /* Arghhhh.  This is to get the POSIX-compliant strerror_r. */
 #define USE_GNU_DEFINED defined(__USE_GNU)
@@ -99,6 +100,13 @@ void check_pthreads(const char *name, int res)
 		fprintf(stderr, "fatal error: %s: %s (%d)\n", name, buf, res);
 		abort();
 	}
+}
+
+xtime_t time_now(void)
+{
+	struct timeval tv;
+	check_syscall("gettimeofday", !gettimeofday(&tv, NULL));
+	return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
 static const char fallback_message[] = "<unable to format message>";

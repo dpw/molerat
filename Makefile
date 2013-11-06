@@ -9,10 +9,16 @@ CFLAGS=-Wall -Wextra -g -D_GNU_SOURCE
 VPATH=$(SRCDIR)
 SRCPATH=$(if $(SRCDIR),$(SRCDIR)/,)
 
-SRCS=base.c buffer.c buffer_test.c thread.c tasklet.c application.c queue.c poll.c socket.c echo_server.c tasklet_test.c queue_test.c socket_test.c echo_server_main.c http-parser/http_parser.c http_reader.c http_server.c http_server_main.c http_client.c skinny-mutex/skinny_mutex.c
+SRCS=base.c buffer.c buffer_test.c thread.c tasklet.c application.c queue.c poll_common.c poll_poll.c poll_epoll.c socket.c echo_server.c tasklet_test.c queue_test.c socket_test.c echo_server_main.c http-parser/http_parser.c http_reader.c http_server.c http_server_main.c http_client.c skinny-mutex/skinny_mutex.c
 HDRS=base.h buffer.h thread.h tasklet.h application.h queue.h poll.h socket.h echo_server.h http-parser/http_parser.h http_reader.h http_server.h skinny-mutex/skinny_mutex.h
 
 $(foreach H,$(HDRS),$(eval HDROBJS_$(SRCPATH)$(H)=$(H:%.h=%.o)))
+
+ifdef USE_EPOLL
+HDROBJS_$(SRCPATH)poll.h=poll_common.o poll_epoll.o
+else
+HDROBJS_$(SRCPATH)poll.h=poll_common.o poll_poll.o
+endif
 
 TESTS=buffer_test tasklet_test queue_test socket_test
 EXECUTABLES=$(TESTS) echo_server http_server http_client

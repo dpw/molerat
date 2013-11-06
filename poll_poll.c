@@ -319,7 +319,7 @@ static void poll_thread(void *v_p)
 
 		if (ppoll(pollfds.pollfds, pollfds.used, NULL, &sigmask) < 0) {
 			if (errno != EINTR)
-				check_syscall("ppoll", 0);
+				check_syscall("ppoll", FALSE);
 
 			continue;
 		}
@@ -336,30 +336,4 @@ static void poll_thread(void *v_p)
 	assert(!pollfds.used);
 	free(pollfds.pollfds);
 	free(pollfds.watched_fds);
-}
-
-static struct poll *singleton;
-
-static void singleton_cleanup(void)
-{
-	struct poll *p = singleton;
-	if (p)
-		poll_destroy(p);
-}
-
-struct poll *poll_singleton(void)
-{
-	for (;;) {
-		struct poll *p = singleton;
-		if (p)
-			return p;
-
-		p = poll_create();
-		if (__sync_bool_compare_and_swap(&singleton, NULL, p)) {
-			atexit(singleton_cleanup);
-			return p;
-		}
-
-		poll_destroy(p);
-	}
 }

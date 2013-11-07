@@ -29,7 +29,7 @@ void http_client_set_header(struct http_client *c, const char *name,
 	growbuf_append_string(&c->request, "\r\n");
 }
 
-struct http_client *http_client_create(struct socket *s)
+struct http_client *http_client_create(struct socket *s, const char *host)
 {
 	struct http_client *c = xalloc(sizeof *c);
 
@@ -42,6 +42,7 @@ struct http_client *http_client_create(struct socket *s)
 	growbuf_init(&c->request, 1000);
 	growbuf_printf(&c->request, "GET %s HTTP/1.1\r\n", "/");
 	http_client_set_header(c, "Connection", "close");
+	http_client_set_header(c, "Host", host);
 
 	mutex_lock(&c->mutex);
 	tasklet_now(&c->tasklet, write_request);
@@ -180,7 +181,7 @@ int main(int argc, char **argv)
 	if (!error_ok(&err))
 		goto out;
 
-	hc = http_client_create(s);
+	hc = http_client_create(s, argv[1]);
 	application_run();
 	http_client_destroy(hc);
 

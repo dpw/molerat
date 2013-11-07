@@ -1,11 +1,6 @@
 #include <poll.h>
-#include <assert.h>
-#include <signal.h>
 
-#include "thread.h"
-#include "tasklet.h"
 #include "poll.h"
-#include "application.h"
 
 /* This code to convert between the system event bitsets and our
    bitsets looks cumbersome, but compiles down to the simple bitwise
@@ -21,57 +16,57 @@ static unsigned int events_to_system(poll_events_t events)
 	ASSERT_SINGLE_BIT(POLLOUT);
 	ASSERT_SINGLE_BIT(POLLERR);
 
-	return TRANSLATE_BIT(events, POLL_EVENT_IN, POLLIN)
-		| TRANSLATE_BIT(events, POLL_EVENT_OUT, POLLOUT)
-		| TRANSLATE_BIT(events, POLL_EVENT_ERR, POLLERR);
+	return TRANSLATE_BIT(events, WATCHED_FD_IN, POLLIN)
+		| TRANSLATE_BIT(events, WATCHED_FD_OUT, POLLOUT)
+		| TRANSLATE_BIT(events, WATCHED_FD_ERR, POLLERR);
 }
 
 /* Translate an event set from the system representation */
 static poll_events_t events_from_system(unsigned int events)
 {
-	return TRANSLATE_BIT(events, POLLIN, POLL_EVENT_IN)
-		| TRANSLATE_BIT(events, POLLOUT, POLL_EVENT_OUT)
-		| TRANSLATE_BIT(events, POLLERR, POLL_EVENT_ERR);
+	return TRANSLATE_BIT(events, POLLIN, WATCHED_FD_IN)
+		| TRANSLATE_BIT(events, POLLOUT, WATCHED_FD_OUT)
+		| TRANSLATE_BIT(events, POLLERR, WATCHED_FD_ERR);
 }
 
 struct poll {
-	struct mutex mutex;
-
-	bool_t thread_woken;
-	bool_t thread_stopping;
-	struct thread thread;
+	struct poll_common common;
 
 	/* Non-null if there are watched_fd_infos that need syncing
 	   into pollfds. */
 	struct watched_fd *updates;
-};
 
-static void poll_thread(void *v_p);
+	struct pollfds {
+		struct pollfd *pollfds;
+		struct watched_fd **watched_fds;
+		size_t size;
+		size_t used;
+	} pollfds;
+};
 
 struct poll *poll_create(void)
 {
 	struct poll *p = xalloc(sizeof *p);
-
-	mutex_init(&p->mutex);
-	p->thread_woken = TRUE;
-	p->thread_stopping = FALSE;
 	p->updates = NULL;
-	thread_init(&p->thread, poll_thread, p);
 
+	p->pollfds.used = 0;
+	p->pollfds.size = 10;
+	p->pollfds.pollfds = xalloc(10 * sizeof *p->pollfds.pollfds);
+	p->pollfds.watched_fds = xalloc(10 * sizeof *p->pollfds.watched_fds);
+
+	poll_common_init(&p->common);
 	return p;
 }
 
 void poll_destroy(struct poll *p)
 {
-	mutex_lock(&p->mutex);
-	assert(!p->thread_stopping);
-	p->thread_stopping = p->thread_woken = TRUE;
-	thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
-	mutex_unlock(&p->mutex);
-	thread_fini(&p->thread);
-	mutex_lock(&p->mutex);
+	mutex_lock(&p->common.mutex);
+	poll_common_stop(&p->common);
 	assert(!p->updates);
-	mutex_unlock_fini(&p->mutex);
+	assert(!p->pollfds.used);
+	mutex_unlock_fini(&p->common.mutex);
+	free(p->pollfds.pollfds);
+	free(p->pollfds.watched_fds);
 	free(p);
 }
 
@@ -95,15 +90,15 @@ struct watched_fd {
 	struct watched_fd *next;
 };
 
-struct watched_fd *watched_fd_create(struct poll *poll, int fd,
-				     watched_fd_handler_t handler, void *data)
+struct watched_fd *watched_fd_create(int fd, watched_fd_handler_t handler,
+				     void *data)
 {
 	struct watched_fd *w;
 
 	assert(fd >= 0);
 
 	w = xalloc(sizeof *w);
-	w->poll = poll;
+	w->poll = poll_singleton();
 	w->fd = fd;
 	w->interest = 0;
 	w->handler = handler;
@@ -136,17 +131,14 @@ static void updated(struct watched_fd *w)
 	}
 
 	/* Poke the poll thread */
-	if (!p->thread_woken) {
-		p->thread_woken = TRUE;
-		thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
-	}
+	poll_common_wake(&p->common);
 }
 
 void watched_fd_destroy(struct watched_fd *w)
 {
 	struct poll *p = w->poll;
 
-	mutex_lock(&p->mutex);
+	mutex_lock(&p->common.mutex);
 
 	if (w->slot < 0) {
 		struct poll *p = w->poll;
@@ -172,32 +164,25 @@ void watched_fd_destroy(struct watched_fd *w)
 		updated(w);
 	}
 
-	mutex_unlock(&p->mutex);
+	mutex_unlock(&p->common.mutex);
 }
 
 void watched_fd_set_interest(struct watched_fd *w, poll_events_t interest)
 {
-	mutex_lock(&w->poll->mutex);
+	mutex_lock(&w->poll->common.mutex);
 	w->interest |= interest;
 	updated(w);
-	mutex_unlock(&w->poll->mutex);
+	mutex_unlock(&w->poll->common.mutex);
 }
 
 void watched_fd_set_handler(struct watched_fd *w, watched_fd_handler_t handler,
 			    void *data)
 {
-	mutex_lock(&w->poll->mutex);
+	mutex_lock(&w->poll->common.mutex);
 	w->handler = handler;
 	w->data = data;
-	mutex_unlock(&w->poll->mutex);
+	mutex_unlock(&w->poll->common.mutex);
 }
-
-struct pollfds {
-	struct pollfd *pollfds;
-	struct watched_fd **watched_fds;
-	size_t size;
-	size_t used;
-};
 
 static void add_pollfd(struct pollfds *pollfds, struct watched_fd *w)
 {
@@ -235,8 +220,9 @@ static void remove_pollfd(struct pollfds *pollfds, size_t slot)
 		w->slot = -1;
 }
 
-static void apply_updates(struct poll *p, struct pollfds *pollfds)
+void poll_prepare(struct poll *p)
 {
+	struct pollfds *pollfds = &p->pollfds;
 	struct watched_fd *head = p->updates;
 	struct watched_fd *w, *next;
 
@@ -266,8 +252,20 @@ static void apply_updates(struct poll *p, struct pollfds *pollfds)
 	p->updates = NULL;
 }
 
-static void dispatch_events(struct pollfds *pollfds)
+bool_t poll_poll(struct poll *p, sigset_t *sigmask)
 {
+	if (ppoll(p->pollfds.pollfds, p->pollfds.used, NULL, sigmask) >= 0)
+		return TRUE;
+
+	if (errno != EINTR)
+		check_syscall("ppoll", FALSE);
+
+	return FALSE;
+}
+
+void poll_dispatch(struct poll *p)
+{
+	struct pollfds *pollfds = &p->pollfds;
 	size_t i;
 
 	for (i = 0; i < pollfds->used;) {
@@ -285,55 +283,4 @@ static void dispatch_events(struct pollfds *pollfds)
 		w->interest = 0;
 		remove_pollfd(pollfds, i);
 	}
-}
-
-static void poll_thread(void *v_p)
-{
-	struct poll *p = v_p;
-	struct run_queue *runq = run_queue_create();
-	sigset_t sigmask;
-	struct pollfds pollfds;
-
-	application_assert_prepared();
-
-	pollfds.used = 0;
-	pollfds.size = 10;
-	pollfds.pollfds = xalloc(pollfds.size * sizeof *pollfds.pollfds);
-	pollfds.watched_fds
-		= xalloc(pollfds.size * sizeof *pollfds.watched_fds);
-
-	run_queue_target(runq);
-
-	check_pthreads("pthread_sigmask",
-		       pthread_sigmask(SIG_SETMASK, NULL, &sigmask));
-	sigdelset(&sigmask, PRIVATE_SIGNAL);
-
-	for (;;) {
-		mutex_lock(&p->mutex);
-		apply_updates(p, &pollfds);
-		if (p->thread_stopping)
-			break;
-
-		p->thread_woken = FALSE;
-		mutex_unlock(&p->mutex);
-
-		if (ppoll(pollfds.pollfds, pollfds.used, NULL, &sigmask) < 0) {
-			if (errno != EINTR)
-				check_syscall("ppoll", FALSE);
-
-			continue;
-		}
-
-		mutex_lock(&p->mutex);
-		p->thread_woken = TRUE;
-		dispatch_events(&pollfds);
-		mutex_unlock(&p->mutex);
-
-		run_queue_run(runq, FALSE);
-	}
-
-	mutex_unlock(&p->mutex);
-	assert(!pollfds.used);
-	free(pollfds.pollfds);
-	free(pollfds.watched_fds);
 }

@@ -1,11 +1,7 @@
 #include <unistd.h>
 #include <sys/epoll.h>
-#include <signal.h>
 
-#include "thread.h"
-#include "tasklet.h"
 #include "poll.h"
-#include "application.h"
 
 /* This code to convert between the system event bitsets and our
    bitsets looks cumbersome, but compiles down to the simple bitwise
@@ -21,21 +17,21 @@ static unsigned int events_to_system(poll_events_t events)
 	ASSERT_SINGLE_BIT(EPOLLOUT);
 	ASSERT_SINGLE_BIT(EPOLLERR);
 
-	return TRANSLATE_BIT(events, POLL_EVENT_IN, EPOLLIN)
-		| TRANSLATE_BIT(events, POLL_EVENT_OUT, EPOLLOUT)
-		| TRANSLATE_BIT(events, POLL_EVENT_ERR, EPOLLERR);
+	return TRANSLATE_BIT(events, WATCHED_FD_IN, EPOLLIN)
+		| TRANSLATE_BIT(events, WATCHED_FD_OUT, EPOLLOUT)
+		| TRANSLATE_BIT(events, WATCHED_FD_ERR, EPOLLERR);
 }
 
 /* Translate an event set from the system representation */
 static poll_events_t events_from_system(unsigned int events)
 {
-	return TRANSLATE_BIT(events, EPOLLIN, POLL_EVENT_IN)
-		| TRANSLATE_BIT(events, EPOLLOUT, POLL_EVENT_OUT)
-		| TRANSLATE_BIT(events, EPOLLERR, POLL_EVENT_ERR);
+	return TRANSLATE_BIT(events, EPOLLIN, WATCHED_FD_IN)
+		| TRANSLATE_BIT(events, EPOLLOUT, WATCHED_FD_OUT)
+		| TRANSLATE_BIT(events, EPOLLERR, WATCHED_FD_ERR);
 }
 
 struct poll {
-	struct mutex mutex;
+	struct poll_common common;
 	struct thread thread;
 	int epfd;
 	bool_t thread_woken;
@@ -43,6 +39,9 @@ struct poll {
 	size_t watched_fd_count;
 	size_t gone_count;
 	struct watched_fd *gone;
+
+	struct epoll_event ee[100];
+	int ee_count;
 };
 
 struct watched_fd {
@@ -55,21 +54,16 @@ struct watched_fd {
 	struct watched_fd *next;
 };
 
-static void poll_thread(void *v_p);
-
 struct poll *poll_create(void)
 {
 	struct poll *p = xalloc(sizeof *p);
 
-	mutex_init(&p->mutex);
 	p->epfd = epoll_create(42);
 	check_syscall("epoll_create", p->epfd >= 0);
-	p->thread_woken = TRUE;
-	p->thread_stopping = FALSE;
 	p->watched_fd_count = 0;
 	p->gone_count = 0;
 	p->gone = NULL;
-	thread_init(&p->thread, poll_thread, p);
+	poll_common_init(&p->common);
 
 	return p;
 }
@@ -87,24 +81,20 @@ static void free_gone_watched_fds(struct poll *p)
 
 void poll_destroy(struct poll *p)
 {
-	mutex_lock(&p->mutex);
-	assert(!p->thread_stopping);
-	p->thread_stopping = p->thread_woken = TRUE;
-	thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
-	mutex_unlock(&p->mutex);
-	thread_fini(&p->thread);
-	mutex_lock(&p->mutex);
+	mutex_lock(&p->common.mutex);
+	poll_common_stop(&p->common);
 	assert(!p->watched_fd_count);
 	free_gone_watched_fds(p);
 	check_syscall("close", !close(p->epfd));
-	mutex_unlock_fini(&p->mutex);
+	mutex_unlock_fini(&p->common.mutex);
 	free(p);
 }
 
-struct watched_fd *watched_fd_create(struct poll *poll, int fd,
-				     watched_fd_handler_t handler, void *data)
+struct watched_fd *watched_fd_create(int fd, watched_fd_handler_t handler,
+				     void *data)
 {
 	struct watched_fd *w;
+	struct poll *poll = poll_singleton();
 
 	assert(fd >= 0);
 
@@ -116,9 +106,9 @@ struct watched_fd *watched_fd_create(struct poll *poll, int fd,
 	w->handler = handler;
 	w->data = data;
 
-	mutex_lock(&poll->mutex);
+	mutex_lock(&poll->common.mutex);
 	poll->watched_fd_count++;
-	mutex_unlock(&poll->mutex);
+	mutex_unlock(&poll->common.mutex);
 
 	return w;
 }
@@ -154,10 +144,10 @@ void watched_fd_set_interest(struct watched_fd *w, poll_events_t interest)
 void watched_fd_set_handler(struct watched_fd *w, watched_fd_handler_t handler,
 			    void *data)
 {
-	mutex_lock(&w->poll->mutex);
+	mutex_lock(&w->poll->common.mutex);
 	w->handler = handler;
 	w->data = data;
-	mutex_unlock(&w->poll->mutex);
+	mutex_unlock(&w->poll->common.mutex);
 }
 
 void watched_fd_destroy(struct watched_fd *w)
@@ -172,67 +162,44 @@ void watched_fd_destroy(struct watched_fd *w)
 
 	w->fd = -1;
 
-	mutex_lock(&poll->mutex);
+	mutex_lock(&poll->common.mutex);
 	poll->watched_fd_count--;
 	w->next = poll->gone;
 	poll->gone = w;
 
 	/* Only wake the thread up to free watched_fds in batches */
-	if (++poll->gone_count == 100 && !poll->thread_woken) {
-		poll->thread_woken = TRUE;
-		thread_signal(thread_get_handle(&poll->thread), PRIVATE_SIGNAL);
-	}
+	if (++poll->gone_count == 100)
+		poll_common_wake(&poll->common);
 
-	mutex_unlock(&poll->mutex);
+	mutex_unlock(&poll->common.mutex);
 }
 
-static void poll_thread(void *v_p)
+void poll_prepare(struct poll *p)
 {
-	struct poll *p = v_p;
-	struct run_queue *runq = run_queue_create();
-	sigset_t sigmask;
-	struct epoll_event ee[100];
+	free_gone_watched_fds(p);
+}
 
-	application_assert_prepared();
-	run_queue_target(runq);
+bool_t poll_poll(struct poll *p, sigset_t *sigmask)
+{
+	p->ee_count = epoll_pwait(p->epfd, p->ee, 100, -1, sigmask);
+	if (p->ee_count >= 0)
+		return TRUE;
 
-	check_pthreads("pthread_sigmask",
-		       pthread_sigmask(SIG_SETMASK, NULL, &sigmask));
-	sigdelset(&sigmask, PRIVATE_SIGNAL);
+	if (errno != EINTR)
+		check_syscall("epoll_pwait", FALSE);
 
-	for (;;) {
-		int i, count;
+	return FALSE;
+}
 
-		mutex_lock(&p->mutex);
-		if (p->thread_stopping)
-			break;
+void poll_dispatch(struct poll *p)
+{
+	int i;
+	int count = p->ee_count;
 
-		free_gone_watched_fds(p);
-		p->thread_woken = FALSE;
-		mutex_unlock(&p->mutex);
-
-		count = epoll_pwait(p->epfd, ee, 100, -1, &sigmask);
-		if (count < 0) {
-			if (errno == EINTR)
-				continue;
-
-			check_syscall("epoll_pwoll", FALSE);
-		}
-
-		mutex_lock(&p->mutex);
-		p->thread_woken = TRUE;
-
-		for (i = 0; i < count; i++) {
-			struct watched_fd *w = ee[i].data.ptr;
-			if (w->fd >= 0)
-				w->handler(w->data,
-					   events_from_system(ee[i].events));
-		}
-
-		mutex_unlock(&p->mutex);
-
-		run_queue_run(runq, FALSE);
+	for (i = 0; i < count; i++) {
+		struct watched_fd *w = p->ee[i].data.ptr;
+		if (w->fd >= 0)
+			w->handler(w->data,
+				   events_from_system(p->ee[i].events));
 	}
-
-	mutex_unlock(&p->mutex);
 }

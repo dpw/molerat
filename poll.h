@@ -1,39 +1,32 @@
 #ifndef MOLERAT_POLL_H
 #define MOLERAT_POLL_H
 
-/* You probably shouldn't be using this directly!  socket.h provides a
- * higher-level interface onto sockets. */
+#include <signal.h>
 
-/* Event bits */
+#include "thread.h"
+#include "watched_fd.h"
 
-enum {
-	POLL_EVENT_IN = 1,
-	POLL_EVENT_OUT = 4,
-	POLL_EVENT_ERR = 8
+/* Stuff common to all poll implementations */
+
+struct poll_common {
+	struct mutex mutex;
+
+	struct thread thread;
+	bool_t thread_woken;
+	bool_t thread_stopping;
 };
 
-/* A handler takes the event bits actually recieved, and the exiting
- * interest set, and returns the new interest set. Note that the
- * handler gets called with the poll lock held. Be careful to avoid
- * deadlock! */
+struct poll *poll_singleton(void);
+void poll_common_init(struct poll_common *p);
+void poll_common_wake(struct poll_common *p);
+void poll_common_stop(struct poll_common *p);
 
-typedef uint8_t poll_events_t;
-typedef void (*watched_fd_handler_t)(void *data, poll_events_t events);
-
+/* The remaining functions are provided by the specific poll implementation. */
 struct poll *poll_create(void);
 void poll_destroy(struct poll *p);
 
-struct poll *poll_singleton(void);
-
-struct watched_fd *watched_fd_create(struct poll *poll, int fd,
-				     watched_fd_handler_t handler, void *data);
-void watched_fd_destroy(struct watched_fd *w);
-
-/* This ors the given event bits into the interest bits. */
-void watched_fd_set_interest(struct watched_fd *w, poll_events_t event);
-
-/* Change the handler for the watched_fd */
-void watched_fd_set_handler(struct watched_fd *w, watched_fd_handler_t handler,
-			    void *data);
+void poll_prepare(struct poll *p);
+bool_t poll_poll(struct poll *p, sigset_t *sigmask);
+void poll_dispatch(struct poll *p);
 
 #endif

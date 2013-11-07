@@ -11,7 +11,7 @@
 
 #include "socket.h"
 #include "tasklet.h"
-#include "poll.h"
+#include "watched_fd.h"
 
 static int would_block(void)
 {
@@ -176,10 +176,10 @@ static void simple_socket_handle_events(void *v_s, poll_events_t events)
 {
 	struct simple_socket *s = v_s;
 
-	if (events & POLL_EVENT_IN)
+	if (events & WATCHED_FD_IN)
 		wait_list_broadcast(&s->reading);
 
-	if (events & POLL_EVENT_OUT)
+	if (events & WATCHED_FD_OUT)
 		wait_list_broadcast(&s->writing);
 }
 
@@ -193,8 +193,8 @@ static void simple_socket_init(struct simple_socket *s,
 
 	s->fd = fd;
 	if (fd >= 0)
-		s->watched_fd = watched_fd_create(poll_singleton(), fd,
-					       simple_socket_handle_events, s);
+		s->watched_fd
+			= watched_fd_create(fd, simple_socket_handle_events, s);
 }
 
 static struct socket *simple_socket_create(int fd)
@@ -288,7 +288,7 @@ static ssize_t simple_socket_read_locked(struct simple_socket *s,
 
 		if (would_block()) {
 			wait_list_wait(&s->reading, t);
-			watched_fd_set_interest(s->watched_fd, POLL_EVENT_IN);
+			watched_fd_set_interest(s->watched_fd, WATCHED_FD_IN);
 			return STREAM_WAITING;
 		}
 
@@ -326,7 +326,7 @@ static ssize_t simple_socket_write_locked(struct simple_socket *s,
 
 		if (would_block()) {
 			wait_list_wait(&s->writing, t);
-			watched_fd_set_interest(s->watched_fd, POLL_EVENT_OUT);
+			watched_fd_set_interest(s->watched_fd, WATCHED_FD_OUT);
 			return STREAM_WAITING;
 		}
 
@@ -490,8 +490,8 @@ static void start_connecting(struct connector *c)
 		if (c->fd < 0)
 			continue;
 
-		c->watched_fd = watched_fd_create(poll_singleton(), c->fd,
-						  connector_handle_events, c);
+		c->watched_fd
+			= watched_fd_create(c->fd, connector_handle_events, c);
 		if (connect(c->fd, ai->ai_addr, ai->ai_addrlen) >= 0) {
 			/* Immediately connected.  Not sure this can
 			   actually happen. */
@@ -501,7 +501,7 @@ static void start_connecting(struct connector *c)
 		else if (would_block()) {
 			/* Writeability will indicate that the connection has
 			 * been established. */
-			watched_fd_set_interest(c->watched_fd, POLL_EVENT_OUT);
+			watched_fd_set_interest(c->watched_fd, WATCHED_FD_OUT);
 			return;
 		}
 		else {
@@ -553,7 +553,7 @@ static void finish_connecting(void *v_c)
 			else {
 				/* Stange, no error.  Continue to poll. */
 				watched_fd_set_interest(c->watched_fd,
-							POLL_EVENT_OUT);
+							WATCHED_FD_OUT);
 			}
 		}
 	}
@@ -565,8 +565,8 @@ static void connector_handle_events(void *v_c, poll_events_t events)
 {
 	struct connector *c = v_c;
 
-	if (events & (POLL_EVENT_OUT | POLL_EVENT_ERR)) {
-		c->connected = (events == POLL_EVENT_OUT);
+	if (events & (WATCHED_FD_OUT | WATCHED_FD_ERR)) {
+		c->connected = (events == WATCHED_FD_OUT);
 		wait_list_up(&c->connecting, 1);
 	}
 }
@@ -714,8 +714,8 @@ static struct simple_server_socket *simple_server_socket_create(int *fds,
 	s->fds = xalloc(n_fds * sizeof *s->fds);
 	for (i = 0; i < n_fds; i++) {
 		s->fds[i].fd = fds[i];
-		s->fds[i].watched_fd = watched_fd_create(poll_singleton(),
-					       fds[i], accept_handle_events, s);
+		s->fds[i].watched_fd
+			= watched_fd_create(fds[i], accept_handle_events, s);
 	}
 
 	return s;
@@ -800,7 +800,7 @@ static struct socket *simple_server_socket_accept(struct server_socket *gs,
 
 	/* No sockets ready, so wait. */
 	for (i = 0; i < s->n_fds; i++)
-		watched_fd_set_interest(s->fds[i].watched_fd, POLL_EVENT_IN);
+		watched_fd_set_interest(s->fds[i].watched_fd, WATCHED_FD_IN);
 
 	wait_list_wait(&s->accepting, t);
 

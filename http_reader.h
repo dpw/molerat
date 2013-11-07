@@ -47,16 +47,31 @@ struct http_header_iter {
 void http_reader_init(struct http_reader *r, struct socket *socket, bool_t req);
 void http_reader_fini(struct http_reader *r);
 
+/* Result codes from http_reader_prebody */
 enum http_reader_prebody_result {
+	/* The HTTP connection was closed while waiting for a message
+	   to start. */
 	HTTP_READER_PREBODY_CLOSED,
+
+	/* The prebody is done, start reading the body. */
 	HTTP_READER_PREBODY_DONE,
+
+	/* The tasklet has been placed on a wait list until progress
+	   can be made. */
 	HTTP_READER_PREBODY_WAITING,
+
+	/* An error occurred. */
 	HTTP_READER_PREBODY_ERROR
 };
 
+/* Continue to read the prebody (i.e. the request/response line plus
+   headers. */
 enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 						    struct tasklet *tasklet,
 						    struct error *err);
+
+/* Read the message body.  The return value has the same conventions
+   as socket_read. */
 ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 			 struct tasklet *tasklet, struct error *err);
 

@@ -15,7 +15,7 @@
 #define TRANSLATE_BIT(val, from, to) ((unsigned int)(from) > (unsigned int)(to) ? ((val) & (from)) / ((from) / (to)) : ((val) & (from)) * ((to) / (from)))
 
 /* Translate an event set to the system representation */
-static unsigned int events_to_system(unsigned int events)
+static unsigned int events_to_system(poll_events_t events)
 {
 	ASSERT_SINGLE_BIT(EPOLLIN);
 	ASSERT_SINGLE_BIT(EPOLLOUT);
@@ -27,7 +27,7 @@ static unsigned int events_to_system(unsigned int events)
 }
 
 /* Translate an event set from the system representation */
-static unsigned int events_from_system(unsigned int events)
+static poll_events_t events_from_system(unsigned int events)
 {
 	return TRANSLATE_BIT(events, EPOLLIN, POLL_EVENT_IN)
 		| TRANSLATE_BIT(events, EPOLLOUT, POLL_EVENT_OUT)
@@ -48,7 +48,7 @@ struct poll {
 struct watched_fd {
 	struct poll *poll;
 	int fd;
-	short interest;
+	poll_events_t interest;
 	bool_t added;
 	watched_fd_handler_t handler;
 	void *data;
@@ -125,7 +125,7 @@ struct watched_fd *watched_fd_create(struct poll *poll, int fd,
 	return w;
 }
 
-void watched_fd_set_interest(struct watched_fd *w, short interest)
+void watched_fd_set_interest(struct watched_fd *w, poll_events_t interest)
 {
 	int op = EPOLL_CTL_ADD;
 	struct epoll_event ee;

@@ -17,7 +17,8 @@ enum {
  * handler gets called with the poll lock held. Be careful to avoid
  * deadlock! */
 
-typedef void (*watched_fd_handler_t)(void *data, unsigned int events);
+typedef uint8_t poll_events_t;
+typedef void (*watched_fd_handler_t)(void *data, poll_events_t events);
 
 struct poll *poll_create(void);
 void poll_destroy(struct poll *p);
@@ -29,7 +30,7 @@ struct watched_fd *watched_fd_create(struct poll *poll, int fd,
 void watched_fd_destroy(struct watched_fd *w);
 
 /* This ors the given event bits into the interest bits. */
-void watched_fd_set_interest(struct watched_fd *w, short event);
+void watched_fd_set_interest(struct watched_fd *w, poll_events_t event);
 
 /* Change the handler for the watched_fd */
 void watched_fd_set_handler(struct watched_fd *w, watched_fd_handler_t handler,

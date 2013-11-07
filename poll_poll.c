@@ -15,7 +15,7 @@
 #define TRANSLATE_BIT(val, from, to) ((from) > (to) ? ((val) & (from)) / ((from) / (to)) : ((val) & (from)) * ((to) / (from)))
 
 /* Translate an event set to the system representation */
-static unsigned int events_to_system(unsigned int events)
+static unsigned int events_to_system(poll_events_t events)
 {
 	ASSERT_SINGLE_BIT(POLLIN);
 	ASSERT_SINGLE_BIT(POLLOUT);
@@ -27,7 +27,7 @@ static unsigned int events_to_system(unsigned int events)
 }
 
 /* Translate an event set from the system representation */
-static unsigned int events_from_system(unsigned int events)
+static poll_events_t events_from_system(unsigned int events)
 {
 	return TRANSLATE_BIT(events, POLLIN, POLL_EVENT_IN)
 		| TRANSLATE_BIT(events, POLLOUT, POLL_EVENT_OUT)
@@ -83,7 +83,7 @@ struct watched_fd {
 	/* The fd, or -1 if the client called watched_fd_destroy went
 	   away. */
 	int fd;
-	short interest;
+	poll_events_t interest;
 
 	watched_fd_handler_t handler;
 	void *data;
@@ -184,7 +184,7 @@ void watched_fd_destroy(struct watched_fd *w)
 	mutex_unlock(&p->mutex);
 }
 
-void watched_fd_set_interest(struct watched_fd *w, short interest)
+void watched_fd_set_interest(struct watched_fd *w, poll_events_t interest)
 {
 	mutex_lock(&w->poll->mutex);
 	w->interest |= interest;

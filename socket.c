@@ -172,7 +172,7 @@ struct simple_socket {
 
 static struct socket_ops simple_socket_ops;
 
-static void simple_socket_handle_events(void *v_s, unsigned int events)
+static void simple_socket_handle_events(void *v_s, poll_events_t events)
 {
 	struct simple_socket *s = v_s;
 
@@ -412,7 +412,7 @@ struct client_socket {
 
 static struct socket_ops client_socket_ops;
 
-static void connector_handle_events(void *v_c, unsigned int events);
+static void connector_handle_events(void *v_c, poll_events_t events);
 static void start_connecting(struct connector *c);
 static void finish_connecting(void *v_c);
 
@@ -558,7 +558,7 @@ static void finish_connecting(void *v_c)
 	mutex_unlock(&s->base.mutex);
 }
 
-static void connector_handle_events(void *v_c, unsigned int events)
+static void connector_handle_events(void *v_c, poll_events_t events)
 {
 	struct connector *c = v_c;
 
@@ -688,7 +688,7 @@ struct server_fd {
 
 static struct server_socket_ops simple_server_socket_ops;
 
-static void accept_handle_events(void *v_s, unsigned int events)
+static void accept_handle_events(void *v_s, poll_events_t events)
 {
 	struct simple_server_socket *s = v_s;
 	(void)events;

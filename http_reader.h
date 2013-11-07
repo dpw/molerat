@@ -50,7 +50,7 @@ void http_reader_fini(struct http_reader *r);
 enum http_reader_prebody_result {
 	HTTP_READER_PREBODY_CLOSED,
 	HTTP_READER_PREBODY_DONE,
-	HTTP_READER_PREBODY_BLOCKED,
+	HTTP_READER_PREBODY_WAITING,
 	HTTP_READER_PREBODY_ERROR
 };
 

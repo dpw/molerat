@@ -13,7 +13,7 @@
 #include "tasklet.h"
 #include "poll.h"
 
-static int blocked(void)
+static int would_block(void)
 {
 	switch (errno) {
 		// POSIX says EWOULDBLOCK can be distinct from EAGAIN
@@ -280,23 +280,26 @@ static ssize_t simple_socket_read_locked(struct simple_socket *s,
 {
 	if (s->fd >= 0) {
 		ssize_t res = read(s->fd, buf, len);
-		if (res >= 0)
+		if (res > 0)
 			return res;
 
-		if (blocked()) {
+		if (res == 0)
+			return len != 0 ? STREAM_END : 0;
+
+		if (would_block()) {
 			wait_list_wait(&s->reading, t);
 			watched_fd_set_interest(s->watched_fd, POLL_EVENT_IN);
+			return STREAM_WAITING;
 		}
-		else {
-			error_errno(e, "read");
-		}
+
+		error_errno(e, "read");
 	}
 	else {
 		error_set(e, ERROR_INVALID,
 			  "socket_read: closed socket");
 	}
 
-	return -1;
+	return STREAM_ERROR;
 }
 
 static ssize_t simple_socket_read(struct socket *gs, void *buf, size_t len,
@@ -321,20 +324,20 @@ static ssize_t simple_socket_write_locked(struct simple_socket *s,
 		if (res >= 0)
 			return res;
 
-		if (blocked()) {
+		if (would_block()) {
 			wait_list_wait(&s->writing, t);
 			watched_fd_set_interest(s->watched_fd, POLL_EVENT_OUT);
+			return STREAM_WAITING;
 		}
-		else {
-			error_errno(e, "write");
-		}
+
+		error_errno(e, "write");
 	}
 	else {
 		error_set(e, ERROR_INVALID,
 			  "socket_write: closed socket");
 	}
 
-	return -1;
+	return STREAM_ERROR;
 }
 
 static ssize_t simple_socket_write(struct socket *gs, void *buf, size_t len,
@@ -495,7 +498,7 @@ static void start_connecting(struct connector *c)
 			wait_list_up(&c->connecting, 1);
 			return;
 		}
-		else if (blocked()) {
+		else if (would_block()) {
 			/* Writeability will indicate that the connection has
 			 * been established. */
 			watched_fd_set_interest(c->watched_fd, POLL_EVENT_OUT);
@@ -623,11 +626,12 @@ static ssize_t client_socket_read(struct socket *gs, void *buf, size_t len,
 	if (!s->connector) {
 		res = simple_socket_read_locked(&s->base, buf, len, t, e);
 	}
+	else if (connector_ok(s->connector, e)) {
+		wait_list_wait(&s->base.reading, t);
+		res = STREAM_WAITING;
+	}
 	else {
-		if (connector_ok(s->connector, e))
-			wait_list_wait(&s->base.reading, t);
-
-		res = -1;
+		res = STREAM_ERROR;
 	}
 
 	mutex_unlock(&s->base.mutex);
@@ -646,11 +650,12 @@ static ssize_t client_socket_write(struct socket *gs, void *buf, size_t len,
 	if (!s->connector) {
 		res = simple_socket_write_locked(&s->base, buf, len, t, e);
 	}
+	else if (connector_ok(s->connector, e)) {
+		wait_list_wait(&s->base.writing, t);
+		res = STREAM_WAITING;
+	}
 	else {
-		if (connector_ok(s->connector, e))
-			wait_list_wait(&s->base.writing, t);
-
-		res = -1;
+		res = STREAM_ERROR;
 	}
 
 	mutex_unlock(&s->base.mutex);
@@ -787,7 +792,7 @@ static struct socket *simple_server_socket_accept(struct server_socket *gs,
 
 			goto out;
 		}
-		else if (!blocked()) {
+		else if (!would_block()) {
 			error_errno(e, "accept");
 			goto out;
 		}

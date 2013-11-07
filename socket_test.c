@@ -41,23 +41,26 @@ void tester_write(void *v_t)
 	for (;;) {
 		if (t->write_pos == t->write_len) {
 			socket_partial_close(t->socket, 1, 0, &t->write_err);
-			tester_stop_1(t, &t->write_tasklet);
 			break;
 		}
 
-		res = socket_write(t->socket, t->write_buf + t->write_pos,
-				   t->write_len - t->write_pos,
-				   &t->write_tasklet,
-				   &t->write_err);
-		if (res < 0)
-			break;
+		switch (res = socket_write(t->socket,
+					   t->write_buf + t->write_pos,
+					   t->write_len - t->write_pos,
+					   &t->write_tasklet, &t->write_err)) {
+		case STREAM_WAITING:
+			goto waiting;
+
+		case STREAM_ERROR:
+			goto error;
+		}
 
 		t->write_pos += res;
 	}
 
-	if (!error_ok(&t->write_err))
-		tester_stop_1(t, &t->write_tasklet);
-
+ error:
+	tester_stop_1(t, &t->write_tasklet);
+ waiting:
 	mutex_unlock(&t->mutex);
 }
 
@@ -72,22 +75,23 @@ void tester_read(void *v_t)
 			t->read_buf = xrealloc(t->read_buf, t->read_capacity);
 		}
 
-		res = socket_read(t->socket, t->read_buf + t->read_pos,
-				  t->read_capacity - t->read_pos,
-				  &t->read_tasklet, &t->read_err);
-		if (res <= 0) {
-			if (res == 0)
-				tester_stop_1(t, &t->read_tasklet);
+		switch (res = socket_read(t->socket, t->read_buf + t->read_pos,
+					  t->read_capacity - t->read_pos,
+					  &t->read_tasklet, &t->read_err)) {
+		case STREAM_WAITING:
+			goto waiting;
 
-			break;
+		case STREAM_END:
+		case STREAM_ERROR:
+			goto done;
 		}
 
 		t->read_pos += res;
 	}
 
-	if (!error_ok(&t->read_err))
-		tester_stop_1(t, &t->read_tasklet);
-
+ done:
+	tester_stop_1(t, &t->read_tasklet);
+ waiting:
 	mutex_unlock(&t->mutex);
 }
 

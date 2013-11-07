@@ -114,11 +114,21 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 		ssize_t rlen = socket_read(r->socket, buf,
 					   growbuf_space(&r->prebody),
 					   tasklet, err);
-		if (rlen < 0)
-			return error_ok(err) ? HTTP_READER_PREBODY_BLOCKED
-				             : HTTP_READER_PREBODY_ERROR;
+		switch (rlen) {
+		case STREAM_WAITING:
+			return HTTP_READER_PREBODY_WAITING;
 
-		growbuf_advance(&r->prebody, rlen);
+		case STREAM_ERROR:
+			return HTTP_READER_PREBODY_ERROR;
+
+		case STREAM_END:
+			/* We need to proceed to tell the parser */
+			break;
+
+		default:
+			growbuf_advance(&r->prebody, rlen);
+			break;
+		}
 
 		/* The amount of data in the prebody buffer to be
 		   parsed. */
@@ -134,14 +144,12 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 			switch (HTTP_PARSER_ERRNO(&r->parser)) {
 			case HPE_OK:
 				if (consumed == 0)
-					/* consumed == 0, so unparsed
-					   must have previously been
-					   0, so this must be the
-					   first pass through the
-					   loop, and the socket read
-					   must have returned 0 bytes,
-					   so we have hit the end of
-					   socket */
+					/* Unparsed must have
+					   previously been 0, so this
+					   must be the first pass
+					   through the loop, and the
+					   socket read must have
+					   returned STREAM_END. */
 					return HTTP_READER_PREBODY_CLOSED;
 
 				break;
@@ -280,7 +288,7 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 
 	if (r->state != HTTP_READER_BODY) {
 		assert(r->state == HTTP_READER_EOM);
-		return 0;
+		return STREAM_END;
 	}
 
 	r->body_end = buf;
@@ -330,11 +338,22 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 
 	buf_pos = r->body_end;
 	got = socket_read(r->socket, buf_pos, len, tasklet, err);
-	if (got < 0)
-		return -1;
+	switch (got) {
+	case STREAM_WAITING:
+	case STREAM_ERROR:
+		return got;
 
-	/* If the socket read returns 0, we still need to feed that to
-	   the parser. */
+	case STREAM_END:
+		/* We need to tell the parser. */
+		got = 0;
+		break;
+
+	default:
+		if (got == 0)
+			return 0;
+
+		break;
+	}
 
 	do {
 		size_t consumed = http_parser_execute(&r->parser, &r->settings,
@@ -356,9 +375,9 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 		default:
 			/* Error */
 			set_error_from_parser(r, err);
-			return -1;
+			return STREAM_ERROR;
 		}
-	} while (got > 0);
+	} while (got);
 
  done:
 	/* All the data read from the socket has been parsed. */

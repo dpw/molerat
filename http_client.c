@@ -73,27 +73,28 @@ static void write_request(void *v_c)
 
 	for (;;) {
 		size_t len = drainbuf_length(&c->request_out);
+		if (!len)
+			break;
 
-		if (!len) {
-			socket_partial_close(c->socket, 1, 0, &c->err);
-			tasklet_now(&c->tasklet, read_response_prebody);
+		switch (res = socket_write(c->socket,
+					   drainbuf_current(&c->request_out),
+					   len, &c->tasklet, &c->err)) {
+		case STREAM_ERROR:
+			fprintf(stderr, "Error: %s\n", error_message(&c->err));
+			tasklet_stop(&c->tasklet);
+			/* fall through */
+
+		case STREAM_WAITING:
+			mutex_unlock(&c->mutex);
 			return;
 		}
-
-		res = socket_write(c->socket, drainbuf_current(&c->request_out),
-				   len, &c->tasklet, &c->err);
-		if (res < 0)
-			break;
 
 		drainbuf_advance(&c->request_out, res);
 	}
 
-	if (!error_ok(&c->err)) {
-		fprintf(stderr, "Error: %s\n", error_message(&c->err));
-		tasklet_stop(&c->tasklet);
-	}
+	socket_partial_close(c->socket, 1, 0, &c->err);
+	tasklet_now(&c->tasklet, read_response_prebody);
 
-	mutex_unlock(&c->mutex);
 }
 
 static void read_response_prebody(void *v_c)
@@ -101,7 +102,7 @@ static void read_response_prebody(void *v_c)
 	struct http_client *c = v_c;
 
 	switch (http_reader_prebody(&c->reader, &c->tasklet, &c->err)) {
-	case HTTP_READER_PREBODY_BLOCKED:
+	case HTTP_READER_PREBODY_WAITING:
 		mutex_unlock(&c->mutex);
 		return;
 
@@ -136,25 +137,25 @@ static void read_response_body(void *v_c)
 	for (;;) {
 		ssize_t res = http_reader_body(&c->reader, buf, 100,
 					       &c->tasklet, &c->err);
-		if (res < 0) {
-			if (!error_ok(&c->err)) {
-				fprintf(stderr, "Error: %s\n",
-					error_message(&c->err));
-				break;
-			}
-			else {
-				/* blocked */
-				mutex_unlock(&c->mutex);
-				return;
-			}
-		}
+		switch (res) {
+		case STREAM_WAITING:
+			mutex_unlock(&c->mutex);
+			return;
 
-		if (res == 0)
-			break;
+		case STREAM_ERROR:
+			goto error;
+
+		case STREAM_END:
+			goto done;
+		}
 
 		printf("%.*s", (int)res, buf);
 	}
 
+ error:
+	fprintf(stderr, "Error: %s\n", error_message(&c->err));
+
+ done:
 	tasklet_stop(&c->tasklet);
 	application_stop();
 	mutex_unlock(&c->mutex);

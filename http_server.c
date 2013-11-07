@@ -235,7 +235,7 @@ static void connection_read_prebody(void *v_c)
 	struct connection *c = v_c;
 
 	switch (http_reader_prebody(&c->reader, &c->tasklet, &c->err)) {
-	case HTTP_READER_PREBODY_BLOCKED:
+	case HTTP_READER_PREBODY_WAITING:
 		mutex_unlock(&c->mutex);
 		return;
 
@@ -270,24 +270,22 @@ static void connection_read_body(void *v_c)
 	for (;;) {
 		ssize_t res = http_reader_body(&c->reader, buf, 100,
 					       &c->tasklet, &c->err);
-		fprintf(stderr, "Read %ld body bytes\n", (long)res);
+		switch (res) {
+		case STREAM_WAITING:
+			mutex_unlock(&c->mutex);
+			return;
 
-		if (res == 0) {
+		case STREAM_ERROR:
+			fprintf(stderr, "Error: %s\n", error_message(&c->err));
+			connection_destroy_locked(c);
+			return;
+
+		case STREAM_END:
 			tasklet_now(&c->tasklet, connection_write);
 			return;
 		}
 
-		if (res < 0)
-			break;
-	}
-
-	if (error_ok(&c->err)) {
-		/* blocked */
-		mutex_unlock(&c->mutex);
-	}
-	else {
-		fprintf(stderr, "Error: %s\n", error_message(&c->err));
-		connection_destroy_locked(c);
+		fprintf(stderr, "Read %ld body bytes\n", (long)res);
 	}
 }
 
@@ -295,30 +293,27 @@ static void connection_write(void *v_c)
 {
 	struct connection *c = v_c;
 
-	for (;;) {
+	while (c->write_pos != c->write_len) {
 		ssize_t res = socket_write(c->socket,
 					   c->write_buf + c->write_pos,
 					   c->write_len - c->write_pos,
 					   &c->tasklet, &c->err);
-		if (res < 0)
-			break;
-
-		c->write_pos += res;
-		if (c->write_pos == c->write_len) {
-			free(c->write_buf);
-			c->write_buf = NULL;
-			tasklet_later(&c->tasklet, connection_read_prebody);
+		switch (res) {
+		case STREAM_WAITING:
 			mutex_unlock(&c->mutex);
 			return;
+
+		case STREAM_ERROR:
+			fprintf(stderr, "Error: %s\n", error_message(&c->err));
+			connection_destroy_locked(c);
+			return;
 		}
+
+		c->write_pos += res;
 	}
 
-	if (error_ok(&c->err)) {
-		/* blocked */
-		mutex_unlock(&c->mutex);
-	}
-	else {
-		fprintf(stderr, "Error: %s\n", error_message(&c->err));
-		connection_destroy_locked(c);
-	}
+	free(c->write_buf);
+	c->write_buf = NULL;
+	tasklet_later(&c->tasklet, connection_read_prebody);
+	mutex_unlock(&c->mutex);
 }

@@ -23,6 +23,23 @@ struct socket_ops {
 	void (*destroy)(struct socket *s);
 };
 
+/* The outcome of reading from or writing to a socket is indicated by
+ * a ssize_t.  Non-negative values means progress was made (unlike for
+ * read(2), a zero result does not mean the stream was closed; it
+ * merely means "try again").  Negative values have these meanings. */
+enum {
+	/* The operation could not be completed, and the tasklet has
+	   been put on a wait_list to be woken when progress can be
+	   made. */
+	STREAM_WAITING = -1,
+
+	/* An error occured, recorded in the struct error.*/
+	STREAM_ERROR = -2,
+
+	/* The end of the stream has been reached (only for reads). */
+	STREAM_END = -3
+};
+
 static inline ssize_t socket_read(struct socket *s, void *buf, size_t len,
 				  struct tasklet *t, struct error *e)
 {

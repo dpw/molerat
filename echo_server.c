@@ -25,33 +25,35 @@ static void echoer_echo(void *v_e)
 
 	for (;;) {
 		if (e->pos == e->len) {
-			res = socket_read(e->socket, e->buf, BUF_SIZE,
-					  &e->tasklet, &err);
-			if (!error_ok(&err))
+			switch (res = socket_read(e->socket, e->buf, BUF_SIZE,
+						  &e->tasklet, &err)) {
+			case STREAM_WAITING:
+				goto waiting;
+
+			case STREAM_END:
+				goto done;
+
+			case STREAM_ERROR:
 				goto error;
-
-			if (res <= 0) {
-				if (res == 0)
-					goto done;
-
-				break;
 			}
 
 			e->len = res;
 			e->pos = 0;
 		}
 
-		res = socket_write(e->socket, e->buf + e->pos, e->len - e->pos,
-				   &e->tasklet, &err);
-		if (!error_ok(&err))
-			goto error;
+		switch (res = socket_write(e->socket, e->buf + e->pos,
+					  e->len - e->pos, &e->tasklet, &err)) {
+		case STREAM_WAITING:
+			goto waiting;
 
-		if (res < 0)
-			break;
+		case STREAM_ERROR:
+			goto error;
+		}
 
 		e->pos += res;
 	}
 
+ waiting:
 	mutex_unlock(&e->mutex);
 	return;
 

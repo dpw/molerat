@@ -37,7 +37,7 @@ static poll_events_t events_from_system(unsigned int events)
 struct poll {
 	struct mutex mutex;
 
-	enum { NONE, PROCESSING, POLLING } thread_state;
+	bool_t thread_woken;
 	bool_t thread_stopping;
 	struct thread thread;
 
@@ -46,14 +46,17 @@ struct poll {
 	struct watched_fd *updates;
 };
 
+static void poll_thread(void *v_p);
+
 struct poll *poll_create(void)
 {
 	struct poll *p = xalloc(sizeof *p);
 
 	mutex_init(&p->mutex);
-	p->thread_state = NONE;
+	p->thread_woken = TRUE;
 	p->thread_stopping = FALSE;
 	p->updates = NULL;
+	thread_init(&p->thread, poll_thread, p);
 
 	return p;
 }
@@ -61,18 +64,13 @@ struct poll *poll_create(void)
 void poll_destroy(struct poll *p)
 {
 	mutex_lock(&p->mutex);
-
-	if (p->thread_state != NONE) {
-		p->thread_stopping = TRUE;
-		p->thread_state = PROCESSING;
-		thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
-		mutex_unlock(&p->mutex);
-		thread_fini(&p->thread);
-		mutex_lock(&p->mutex);
-	}
-
+	assert(!p->thread_stopping);
+	p->thread_stopping = p->thread_woken = TRUE;
+	thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
+	mutex_unlock(&p->mutex);
+	thread_fini(&p->thread);
+	mutex_lock(&p->mutex);
 	assert(!p->updates);
-
 	mutex_unlock_fini(&p->mutex);
 	free(p);
 }
@@ -116,8 +114,6 @@ struct watched_fd *watched_fd_create(struct poll *poll, int fd,
 	return w;
 }
 
-static void poll_thread(void *v_p);
-
 static void updated(struct watched_fd *w)
 {
 	struct poll *p;
@@ -140,14 +136,9 @@ static void updated(struct watched_fd *w)
 	}
 
 	/* Poke the poll thread */
-	if (p->thread_state != PROCESSING) {
-		if (p->thread_state == NONE)
-			thread_init(&p->thread, poll_thread, p);
-		else
-			thread_signal(thread_get_handle(&p->thread),
-				      PRIVATE_SIGNAL);
-
-		p->thread_state = PROCESSING;
+	if (!p->thread_woken) {
+		p->thread_woken = TRUE;
+		thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
 	}
 }
 
@@ -323,7 +314,7 @@ static void poll_thread(void *v_p)
 		if (p->thread_stopping)
 			break;
 
-		p->thread_state = POLLING;
+		p->thread_woken = FALSE;
 		mutex_unlock(&p->mutex);
 
 		if (ppoll(pollfds.pollfds, pollfds.used, NULL, &sigmask) < 0) {
@@ -334,7 +325,7 @@ static void poll_thread(void *v_p)
 		}
 
 		mutex_lock(&p->mutex);
-		p->thread_state = PROCESSING;
+		p->thread_woken = TRUE;
 		dispatch_events(&pollfds);
 		mutex_unlock(&p->mutex);
 

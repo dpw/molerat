@@ -64,12 +64,12 @@ struct poll *poll_create(void)
 	mutex_init(&p->mutex);
 	p->epfd = epoll_create(42);
 	check_syscall("epoll_create", p->epfd >= 0);
-	thread_init(&p->thread, poll_thread, p);
 	p->thread_woken = TRUE;
 	p->thread_stopping = FALSE;
 	p->watched_fd_count = 0;
 	p->gone_count = 0;
 	p->gone = NULL;
+	thread_init(&p->thread, poll_thread, p);
 
 	return p;
 }
@@ -88,14 +88,12 @@ static void free_gone_watched_fds(struct poll *p)
 void poll_destroy(struct poll *p)
 {
 	mutex_lock(&p->mutex);
-	if (!p->thread_stopping) {
-		p->thread_stopping = p->thread_woken = TRUE;
-		thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
-		mutex_unlock(&p->mutex);
-		thread_fini(&p->thread);
-		mutex_lock(&p->mutex);
-	}
-
+	assert(!p->thread_stopping);
+	p->thread_stopping = p->thread_woken = TRUE;
+	thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
+	mutex_unlock(&p->mutex);
+	thread_fini(&p->thread);
+	mutex_lock(&p->mutex);
 	assert(!p->watched_fd_count);
 	free_gone_watched_fds(p);
 	check_syscall("close", !close(p->epfd));
@@ -180,7 +178,7 @@ void watched_fd_destroy(struct watched_fd *w)
 	poll->gone = w;
 
 	/* Only wake the thread up to free watched_fds in batches */
-	if (++poll->gone_count == 100) {
+	if (++poll->gone_count == 100 && !poll->thread_woken) {
 		poll->thread_woken = TRUE;
 		thread_signal(thread_get_handle(&poll->thread), PRIVATE_SIGNAL);
 	}
@@ -222,6 +220,7 @@ static void poll_thread(void *v_p)
 		}
 
 		mutex_lock(&p->mutex);
+		p->thread_woken = TRUE;
 
 		for (i = 0; i < count; i++) {
 			struct watched_fd *w = ee[i].data.ptr;

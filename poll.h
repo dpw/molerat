@@ -5,6 +5,7 @@
 
 #include "thread.h"
 #include "watched_fd.h"
+#include "timer.h"
 
 /* Stuff common to all poll implementations */
 
@@ -14,6 +15,8 @@ struct poll_common {
 	struct thread thread;
 	bool_t thread_woken;
 	bool_t thread_stopping;
+
+	struct timer *timers;
 };
 
 struct poll *poll_singleton(void);
@@ -26,7 +29,7 @@ struct poll *poll_create(void);
 void poll_destroy(struct poll *p);
 
 void poll_prepare(struct poll *p);
-bool_t poll_poll(struct poll *p, sigset_t *sigmask);
+bool_t poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask);
 void poll_dispatch(struct poll *p);
 
 #endif

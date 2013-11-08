@@ -179,9 +179,12 @@ void poll_prepare(struct poll *p)
 	free_gone_watched_fds(p);
 }
 
-bool_t poll_poll(struct poll *p, sigset_t *sigmask)
+bool_t poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
 {
-	p->ee_count = epoll_pwait(p->epfd, p->ee, 100, -1, sigmask);
+	if (timeout > 0)
+		timeout = xtime_to_ms(timeout);
+
+	p->ee_count = epoll_pwait(p->epfd, p->ee, 100, timeout, sigmask);
 	if (p->ee_count >= 0)
 		return TRUE;
 

@@ -42,6 +42,8 @@ struct poll {
 		size_t size;
 		size_t used;
 	} pollfds;
+
+	int poll_result;
 };
 
 struct poll *poll_create(void)
@@ -252,9 +254,22 @@ void poll_prepare(struct poll *p)
 	p->updates = NULL;
 }
 
-bool_t poll_poll(struct poll *p, sigset_t *sigmask)
+bool_t poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
 {
-	if (ppoll(p->pollfds.pollfds, p->pollfds.used, NULL, sigmask) >= 0)
+	struct timespec ts, *tsp;
+
+	if (timeout >= 0) {
+		ts.tv_sec = timeout / XTIME_SECOND;
+		ts.tv_nsec = xtime_to_ns(timeout % XTIME_SECOND);
+		tsp = &ts;
+	}
+	else {
+		tsp = NULL;
+	}
+
+	p->poll_result
+		= ppoll(p->pollfds.pollfds, p->pollfds.used, tsp, sigmask);
+	if (p->poll_result >= 0)
 		return TRUE;
 
 	if (errno != EINTR)
@@ -267,6 +282,10 @@ void poll_dispatch(struct poll *p)
 {
 	struct pollfds *pollfds = &p->pollfds;
 	size_t i;
+
+	if (!p->poll_result)
+		/* Poll timed out, revents fields were not set. */
+		return;
 
 	for (i = 0; i < pollfds->used;) {
 		struct pollfd *pollfd = &pollfds->pollfds[i];

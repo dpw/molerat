@@ -22,11 +22,24 @@ void check_syscall(const char *name, int ok);
 /* Abort on a failed pthreads call */
 void check_pthreads(const char *name, int res);
 
-/* A high-resolution timestamp type */
-typedef uint64_t xtime_t;
+/* A high-resolution timestamp type.  Signed, so can be used for
+   absolute times or time deltas. */
+typedef int64_t xtime_t;
+
+#define XTIME_SECOND 1000000
 
 /* Get the current time */
 xtime_t time_now(void);
+
+static inline xtime_t xtime_to_ns(xtime_t t)
+{
+	return t * (1000000000 / XTIME_SECOND);
+}
+
+static inline xtime_t xtime_to_ms(xtime_t t)
+{
+	return t / (XTIME_SECOND / 1000);
+}
 
 struct error {
 	unsigned int category;

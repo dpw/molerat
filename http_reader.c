@@ -92,6 +92,8 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 						    struct tasklet *tasklet,
 						    struct error *err)
 {
+	enum http_reader_prebody_result waiting_result;
+
 	if (r->state != HTTP_READER_PREBODY) {
 		assert(r->state == HTTP_READER_EOM);
 
@@ -102,6 +104,7 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 		r->state = HTTP_READER_PREBODY;
 	}
 
+	waiting_result = HTTP_READER_PREBODY_WAITING;
 	for (;;) {
 		/* Read some data from the socket */
 
@@ -116,7 +119,7 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 					   tasklet, err);
 		switch (rlen) {
 		case STREAM_WAITING:
-			return HTTP_READER_PREBODY_WAITING;
+			return waiting_result;
 
 		case STREAM_ERROR:
 			return HTTP_READER_PREBODY_ERROR;
@@ -126,6 +129,10 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 			break;
 
 		default:
+			if (rlen == 0)
+				continue;
+
+			waiting_result = HTTP_READER_PREBODY_PROGRESS;
 			growbuf_advance(&r->prebody, rlen);
 			break;
 		}

@@ -103,6 +103,7 @@ static void read_response_prebody(void *v_c)
 
 	switch (http_reader_prebody(&c->reader, &c->tasklet, &c->err)) {
 	case HTTP_READER_PREBODY_WAITING:
+	case HTTP_READER_PREBODY_PROGRESS:
 		mutex_unlock(&c->mutex);
 		return;
 

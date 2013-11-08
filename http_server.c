@@ -3,7 +3,7 @@
 
 #include "socket.h"
 #include "tasklet.h"
-#include "http-parser/http_parser.h"
+#include "timer.h"
 
 #include "http_server.h"
 #include "http_reader.h"
@@ -25,6 +25,8 @@ struct connection {
 
 	struct mutex mutex;
 	struct tasklet tasklet;
+	struct timer timeout;
+	struct tasklet timeout_tasklet;
 	struct socket *socket;
 	struct error err;
 	struct http_reader reader;
@@ -167,6 +169,13 @@ static void connection_write(void *v_c);
 static void connection_read_body(void *v_c);
 static void connection_read_prebody(void *v_c);
 
+static void connection_timeout(void *v_c);
+
+static void update_timeout(struct connection *c)
+{
+	timer_set_relative(&c->timeout, 240 * XTIME_SECOND, 241 * XTIME_SECOND);
+}
+
 static struct connection *connection_create(struct http_server *server,
 					    struct socket *s)
 {
@@ -175,12 +184,17 @@ static struct connection *connection_create(struct http_server *server,
 	mutex_init(&conn->mutex);
 	conn->socket = s;
 	tasklet_init(&conn->tasklet, &conn->mutex, conn);
+	timer_init(&conn->timeout);
+	update_timeout(conn);
+	tasklet_init(&conn->timeout_tasklet, &conn->mutex, conn);
 	error_init(&conn->err);
 	http_reader_init(&conn->reader, s, TRUE);
 	conn->write_buf = NULL;
 	add_connection(server, conn);
 
 	tasklet_later(&conn->tasklet, connection_read_prebody);
+	mutex_lock(&conn->mutex);
+	tasklet_now(&conn->timeout_tasklet, connection_timeout);
 
 	return conn;
 }
@@ -192,6 +206,8 @@ static void connection_destroy_locked(struct connection *conn)
 	remove_connection(conn);
 	mutex_veto_transfer(&conn->mutex);
 	tasklet_fini(&conn->tasklet);
+	timer_fini(&conn->timeout);
+	tasklet_fini(&conn->timeout_tasklet);
 	http_reader_fini(&conn->reader);
 	socket_destroy(conn->socket);
 	free(conn->write_buf);
@@ -235,6 +251,10 @@ static void connection_read_prebody(void *v_c)
 	struct connection *c = v_c;
 
 	switch (http_reader_prebody(&c->reader, &c->tasklet, &c->err)) {
+	case HTTP_READER_PREBODY_PROGRESS:
+		update_timeout(c);
+		/* Fall through */
+
 	case HTTP_READER_PREBODY_WAITING:
 		mutex_unlock(&c->mutex);
 		return;
@@ -242,6 +262,7 @@ static void connection_read_prebody(void *v_c)
 	case HTTP_READER_PREBODY_DONE:
 		dump_headers(&c->reader);
 		construct_response(c);
+		timer_clear(&c->timeout);
 		tasklet_now(&c->tasklet, connection_read_body);
 		return;
 
@@ -316,4 +337,17 @@ static void connection_write(void *v_c)
 	c->write_buf = NULL;
 	tasklet_later(&c->tasklet, connection_read_prebody);
 	mutex_unlock(&c->mutex);
+}
+
+static void connection_timeout(void *v_c)
+{
+	struct connection *c = v_c;
+
+	if (!timer_wait(&c->timeout, &c->timeout_tasklet)) {
+		mutex_unlock(&c->mutex);
+		return;
+	}
+
+	fprintf(stderr, "Closing connection due to timeout\n");
+	connection_destroy_locked(c);
 }

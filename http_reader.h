@@ -60,6 +60,10 @@ enum http_reader_prebody_result {
 	   can be made. */
 	HTTP_READER_PREBODY_WAITING,
 
+	/* Data was received and the tasklet made some progress, but
+	   still ended up waiting. */
+	HTTP_READER_PREBODY_PROGRESS,
+
 	/* An error occurred. */
 	HTTP_READER_PREBODY_ERROR
 };

@@ -179,19 +179,14 @@ void poll_prepare(struct poll *p)
 	free_gone_watched_fds(p);
 }
 
-bool_t poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
+void poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
 {
 	if (timeout > 0)
 		timeout = xtime_to_ms(timeout);
 
 	p->ee_count = epoll_pwait(p->epfd, p->ee, 100, timeout, sigmask);
-	if (p->ee_count >= 0)
-		return TRUE;
-
-	if (errno != EINTR)
+	if (p->ee_count < 0 && errno != EINTR)
 		check_syscall("epoll_pwait", FALSE);
-
-	return FALSE;
 }
 
 void poll_dispatch(struct poll *p)

@@ -216,20 +216,21 @@ static void poll_thread(void *v_p)
 
 	for (;;) {
 		mutex_lock(&p->mutex);
-		poll_prepare((struct poll *)p);
-
 		if (p->thread_stopping)
 			break;
 
-		p->thread_woken = FALSE;
+		poll_prepare((struct poll *)p);
 		timeout = earliest_latest(p);
+		p->thread_woken = FALSE;
 		mutex_unlock(&p->mutex);
 
-		if ((timeout < 0 || (timeout -= time_now()) > 0)
-		    && !poll_poll((struct poll *)p, timeout, &sigmask))
-			continue;
+		if (timeout < 0 || (timeout -= time_now()) > 0)
+			poll_poll((struct poll *)p, timeout, &sigmask);
 
 		mutex_lock(&p->mutex);
+		if (p->thread_stopping)
+			break;
+
 		p->thread_woken = TRUE;
 		poll_dispatch((struct poll *)p);
 		dispatch_timers(p);
@@ -238,6 +239,9 @@ static void poll_thread(void *v_p)
 		run_queue_run(runq, FALSE);
 	}
 
+	/* poll_prepare may perform some housekeeping that should
+	   occur before we finish. */
+	poll_prepare((struct poll *)p);
 	mutex_unlock(&p->mutex);
 }
 

@@ -254,7 +254,7 @@ void poll_prepare(struct poll *p)
 	p->updates = NULL;
 }
 
-bool_t poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
+void poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
 {
 	struct timespec ts, *tsp;
 
@@ -269,13 +269,8 @@ bool_t poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
 
 	p->poll_result
 		= ppoll(p->pollfds.pollfds, p->pollfds.used, tsp, sigmask);
-	if (p->poll_result >= 0)
-		return TRUE;
-
-	if (errno != EINTR)
+	if (p->poll_result < 0 && errno != EINTR)
 		check_syscall("ppoll", FALSE);
-
-	return FALSE;
 }
 
 void poll_dispatch(struct poll *p)

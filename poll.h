@@ -29,7 +29,7 @@ struct poll *poll_create(void);
 void poll_destroy(struct poll *p);
 
 void poll_prepare(struct poll *p);
-bool_t poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask);
+void poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask);
 void poll_dispatch(struct poll *p);
 
 #endif

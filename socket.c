@@ -619,7 +619,6 @@ static ssize_t client_socket_read(struct socket *gs, void *buf, size_t len,
 {
 	struct client_socket *s = (struct client_socket *)gs;
 	ssize_t res;
-	assert(gs->ops == &client_socket_ops);
 
 	mutex_lock(&s->base.mutex);
 
@@ -643,7 +642,6 @@ static ssize_t client_socket_write(struct socket *gs, void *buf, size_t len,
 {
 	struct client_socket *s = (struct client_socket *)gs;
 	ssize_t res;
-	assert(gs->ops == &client_socket_ops);
 
 	mutex_lock(&s->base.mutex);
 

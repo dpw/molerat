@@ -519,10 +519,17 @@ void run_queue_run(struct run_queue *runq, int wait)
 		runq->current_requeue = runq->current_stopped = FALSE;
 		t->waited = FALSE;
 
-		if (mutex_transfer(&runq->mutex, t->mutex)) {
-			t->handler(t->data);
-			mutex_lock(&runq->mutex);
-		}
+		/* mutex_transfer can fail because of a veto aimed at
+		   a tasket on another run queue but using the same
+		   mutex.  So we have to check that the current
+		   tasklet was really stopped. */
+		do {
+			if (mutex_transfer(&runq->mutex, t->mutex)) {
+				t->handler(t->data);
+				mutex_lock(&runq->mutex);
+				break;
+			}
+		} while (!runq->current_stopped);
 
 		if (runq->current == t) {
 			if (!runq->current_requeue) {

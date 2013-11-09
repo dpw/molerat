@@ -262,7 +262,7 @@ static void connection_read_prebody(void *v_c)
 	case HTTP_READER_PREBODY_DONE:
 		dump_headers(&c->reader);
 		construct_response(c);
-		timer_clear(&c->timeout);
+		timer_cancel(&c->timeout);
 		tasklet_now(&c->tasklet, connection_read_body);
 		return;
 

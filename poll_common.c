@@ -63,10 +63,11 @@ void timer_init(struct timer *t)
 {
 	t->poll = (struct poll_common *)poll_singleton();
 	t->next = NULL;
+	t->fired = FALSE;
 	wait_list_init(&t->waiting, 0);
 }
 
-static void timer_clear_locked(struct timer *t)
+static void timer_cancel_locked(struct timer *t)
 {
 	struct poll_common *p = t->poll;
 
@@ -89,7 +90,7 @@ void timer_fini(struct timer *t)
 {
 	struct poll_common *p = t->poll;
 	mutex_lock(&p->mutex);
-	timer_clear_locked(t);
+	timer_cancel_locked(t);
 	t->poll = NULL;
 	wait_list_fini(&t->waiting);
 	mutex_unlock(&p->mutex);
@@ -98,10 +99,11 @@ void timer_fini(struct timer *t)
 void timer_set(struct timer *t, xtime_t earliest, xtime_t latest)
 {
 	struct poll_common *p = t->poll;
+	assert(earliest < latest);
 	mutex_lock(&p->mutex);
-
 	t->earliest = earliest;
 	t->latest = latest;
+	t->fired = FALSE;
 
 	if (!t->next) {
 		struct timer *head = p->timers;
@@ -109,7 +111,7 @@ void timer_set(struct timer *t, xtime_t earliest, xtime_t latest)
 			struct timer *tail = head->prev;
 			t->next = head;
 			t->prev = tail;
-			head->next = tail->prev = t;
+			head->prev = tail->next = t;
 		}
 		else {
 			p->timers = t;
@@ -127,22 +129,28 @@ void timer_set_relative(struct timer *t, xtime_t earliest, xtime_t latest)
 	timer_set(t, earliest + now, latest + now);
 }
 
-void timer_clear(struct timer *t)
+void timer_cancel(struct timer *t)
 {
 	struct poll_common *p = t->poll;
 	mutex_lock(&p->mutex);
-	timer_clear_locked(t);
+	timer_cancel_locked(t);
 	t->next = NULL;
+	t->fired = FALSE;
 	mutex_unlock(&p->mutex);
 }
 
 bool_t timer_wait(struct timer *t, struct tasklet *tasklet)
 {
-	if (t->earliest <= time_now())
-		return TRUE;
+	bool_t res = TRUE;
+	mutex_lock(&t->poll->mutex);
 
-	wait_list_wait(&t->waiting, tasklet);
-	return FALSE;
+	if (!t->fired) {
+		wait_list_wait(&t->waiting, tasklet);
+		res = FALSE;
+	}
+
+	mutex_unlock(&t->poll->mutex);
+	return res;
 }
 
 static void dispatch_timers(struct poll_common *p)
@@ -150,20 +158,24 @@ static void dispatch_timers(struct poll_common *p)
 	xtime_t now;
 	struct timer *t = p->timers;
 
-	if (t == NULL)
+	if (!t)
 		return;
 
 	now = time_now();
 
 	for (;;) {
+		struct timer *next = t->next;
+
 		if (t->earliest <= now) {
+			t->fired = TRUE;
+			t->next = NULL;
 			wait_list_broadcast(&t->waiting);
 
-			if (t->next != t) {
-				t->next->prev = t->prev;
-				t->prev->next = t->next;
+			if (next != t) {
+				next->prev = t->prev;
+				t->prev->next = next;
 				if (p->timers == t) {
-					t = p->timers = t->next;
+					t = p->timers = next;
 					continue;
 				}
 			}
@@ -173,7 +185,7 @@ static void dispatch_timers(struct poll_common *p)
 			}
 		}
 
-		t = t->next;
+		t = next;
 		if (t == p->timers)
 			break;
 	}

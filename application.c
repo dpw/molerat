@@ -45,11 +45,12 @@ void application_assert_prepared(void)
 	assert(sa.sa_handler == wakey_wakey);
 }
 
-void application_run(void)
+bool_t application_run(void)
 {
 	int run;
 	sigset_t sigs;
 	int sig;
+	bool_t res = TRUE;
 
 	sigemptyset(&sigs);
 	sigaddset(&sigs, PRIVATE_SIGNAL);
@@ -66,12 +67,15 @@ void application_run(void)
 		check_pthreads("sigwait", sigwait(&sigs, &sig));
 		mutex_lock(&app_mutex);
 
-		if (sig == SIGINT)
+		if (sig == SIGINT) {
+			res = FALSE;
 			break;
+		}
 	}
 
 	app_running--;
 	mutex_unlock(&app_mutex);
+	return res;
 }
 
 void application_stop(void)

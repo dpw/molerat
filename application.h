@@ -6,7 +6,7 @@
 void application_prepare(void);
 void application_assert_prepared(void);
 
-void application_run(void);
+bool_t application_run(void);
 void application_stop(void);
 
 #endif

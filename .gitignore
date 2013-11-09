@@ -8,6 +8,7 @@ buffer_test
 tasklet_test
 queue_test
 socket_test
+timer_test
 echo_server
 http_server
 http_client

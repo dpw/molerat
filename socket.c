@@ -684,18 +684,21 @@ struct simple_server_socket {
 };
 
 struct server_fd {
+	struct simple_server_socket *socket;
 	struct watched_fd *watched_fd;
 	int fd;
+	bool_t ready;
 };
 
 
 static struct server_socket_ops simple_server_socket_ops;
 
-static void accept_handle_events(void *v_s, poll_events_t events)
+static void accept_handle_events(void *v_sfd, poll_events_t events)
 {
-	struct simple_server_socket *s = v_s;
+	struct server_fd *sfd = v_sfd;
 	(void)events;
-	wait_list_broadcast(&s->accepting);
+	sfd->ready = TRUE;
+	wait_list_up(&sfd->socket->accepting, 1);
 }
 
 static struct simple_server_socket *simple_server_socket_create(int *fds,
@@ -711,9 +714,12 @@ static struct simple_server_socket *simple_server_socket_create(int *fds,
 
 	s->fds = xalloc(n_fds * sizeof *s->fds);
 	for (i = 0; i < n_fds; i++) {
-		s->fds[i].fd = fds[i];
-		s->fds[i].watched_fd
-			= watched_fd_create(fds[i], accept_handle_events, s);
+		struct server_fd *sfd = &s->fds[i];
+		sfd->socket = s;
+		sfd->fd = fds[i];
+		sfd->ready = FALSE;
+		sfd->watched_fd
+			= watched_fd_create(fds[i], accept_handle_events, sfd);
 	}
 
 	return s;
@@ -771,36 +777,42 @@ static struct socket *simple_server_socket_accept(struct server_socket *gs,
 
 	mutex_lock(&s->mutex);
 
-	/* Go through the accepting sockets doing an accept(2) on
-	   each, until one yields a connected socket.  This means we
-	   do some spurious accept calls.  It would be better to hang
-	   a tasklet off each accepting_socket and queue the accepted
-	   fds in userspace.  But this will do for now. */
-	for (i = 0; i < s->n_fds; i++) {
-		fd = accept(s->fds[i].fd, NULL, NULL);
-		if (fd >= 0) {
-			/* Got one! */
-			if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0) {
-				error_errno(e, "fcntl");
-				close(fd);
+	do {
+		for (i = 0; i < s->n_fds; i++) {
+			struct server_fd *sfd = &s->fds[i];
+
+			if (!sfd->ready)
+				continue;
+
+			/* Clear sfd->ready before trying accept, to
+			   avoid a race with accept_handle_events. */
+			sfd->ready = FALSE;
+			fd = accept(sfd->fd, NULL, NULL);
+			if (fd >= 0) {
+				/* Got one! But there might be more to come. */
+				sfd->ready = TRUE;
+
+				if (fcntl(fd, F_SETFL, O_NONBLOCK) < 0) {
+					error_errno(e, "fcntl");
+					close(fd);
+				}
+				else {
+					res = simple_socket_create(fd);
+				}
+
+				goto out;
 			}
-			else {
-				res = simple_socket_create(fd);
+			else if (!would_block()) {
+				error_errno(e, "accept");
+				goto out;
 			}
-
-			goto out;
 		}
-		else if (!would_block()) {
-			error_errno(e, "accept");
-			goto out;
-		}
-	}
 
-	/* No sockets ready, so wait. */
-	for (i = 0; i < s->n_fds; i++)
-		watched_fd_set_interest(s->fds[i].watched_fd, WATCHED_FD_IN);
-
-	wait_list_wait(&s->accepting, t);
+		/* No sockets ready, so wait. */
+		for (i = 0; i < s->n_fds; i++)
+			watched_fd_set_interest(s->fds[i].watched_fd,
+						WATCHED_FD_IN);
+	} while (wait_list_down(&s->accepting, 1, t));
 
  out:
 	mutex_unlock(&s->mutex);

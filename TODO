@@ -1,8 +1,10 @@
+allow thread debuggging bits to be compiled out
+
 can use timerfds for timers
 
 show tasklet handler in run_queue_run asserts
 
-Propograte syscall errors from poll_epoll
+Propagate syscall errors from poll_epoll
 
 http_writer
 
@@ -21,8 +23,6 @@ thread API probably better pointer-based
 
 thorough testing of http reader (byte-by-byte parsing, large bodies,
 prebody-body-prebody handling)
-
-Fix the spurious accept issue in socket.c
 
 ERROR_INVALID to replace many asserts
 

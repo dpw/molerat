@@ -3,31 +3,21 @@
 #include "socket.h"
 #include "tasklet.h"
 #include "application.h"
-#include "buffer.h"
 #include "http_reader.h"
+#include "http_writer.h"
 
 struct http_client {
 	struct mutex mutex;
 	struct tasklet tasklet;
 	struct socket *socket;
 	struct error err;
-	struct growbuf request;
-	struct drainbuf request_out;
+	struct http_writer writer;
 	struct http_reader reader;
 };
 
 static void write_request(void *v_c);
 static void read_response_prebody(void *v_c);
 static void read_response_body(void *v_c);
-
-void http_client_set_header(struct http_client *c, const char *name,
-			    const char *val)
-{
-	growbuf_append_string(&c->request, name);
-	growbuf_append_string(&c->request, ": ");
-	growbuf_append_string(&c->request, val);
-	growbuf_append_string(&c->request, "\r\n");
-}
 
 struct http_client *http_client_create(struct socket *s, const char *host)
 {
@@ -37,12 +27,12 @@ struct http_client *http_client_create(struct socket *s, const char *host)
 	tasklet_init(&c->tasklet, &c->mutex, c);
 	c->socket = s;
 	error_init(&c->err);
+	http_writer_init(&c->writer, s);
 	http_reader_init(&c->reader, s, FALSE);
 
-	growbuf_init(&c->request, 1000);
-	growbuf_printf(&c->request, "GET %s HTTP/1.1\r\n", "/");
-	http_client_set_header(c, "Connection", "close");
-	http_client_set_header(c, "Host", host);
+	http_writer_start_request(&c->writer, "/");
+	http_writer_write_header(&c->writer, "Connection", "close");
+	http_writer_write_header(&c->writer, "Host", host);
 
 	mutex_lock(&c->mutex);
 	tasklet_now(&c->tasklet, write_request);
@@ -56,7 +46,7 @@ void http_client_destroy(struct http_client *c)
 	socket_destroy(c->socket);
 	error_fini(&c->err);
 	http_reader_fini(&c->reader);
-	growbuf_fini(&c->request);
+	http_writer_fini(&c->writer);
 	mutex_unlock_fini(&c->mutex);
 	free(c);
 }
@@ -64,37 +54,21 @@ void http_client_destroy(struct http_client *c)
 static void write_request(void *v_c)
 {
 	struct http_client *c = v_c;
-	ssize_t res;
+	ssize_t res = http_writer_end(&c->writer, &c->tasklet, &c->err);
+	switch (res) {
+	case HTTP_WRITER_END_ERROR:
+		fprintf(stderr, "Error: %s\n", error_message(&c->err));
+		tasklet_stop(&c->tasklet);
+		/* fall through */
 
-	if (!growbuf_frozen(&c->request)) {
-		growbuf_append_string(&c->request, "\r\n");
-		growbuf_to_drainbuf(&c->request, &c->request_out);
+	case HTTP_WRITER_END_WAITING:
+		mutex_unlock(&c->mutex);
+		return;
+
+	case HTTP_WRITER_END_DONE:
+		socket_partial_close(c->socket, 1, 0, &c->err);
+		tasklet_now(&c->tasklet, read_response_prebody);
 	}
-
-	for (;;) {
-		size_t len = drainbuf_length(&c->request_out);
-		if (!len)
-			break;
-
-		switch (res = socket_write(c->socket,
-					   drainbuf_current(&c->request_out),
-					   len, &c->tasklet, &c->err)) {
-		case STREAM_ERROR:
-			fprintf(stderr, "Error: %s\n", error_message(&c->err));
-			tasklet_stop(&c->tasklet);
-			/* fall through */
-
-		case STREAM_WAITING:
-			mutex_unlock(&c->mutex);
-			return;
-		}
-
-		drainbuf_advance(&c->request_out, res);
-	}
-
-	socket_partial_close(c->socket, 1, 0, &c->err);
-	tasklet_now(&c->tasklet, read_response_prebody);
-
 }
 
 static void read_response_prebody(void *v_c)

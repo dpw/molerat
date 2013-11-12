@@ -14,6 +14,16 @@
 
 #include "base.h"
 
+void die(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fputc('\n', stderr);
+	abort();
+}
 
 void *xalloc(size_t s)
 {
@@ -21,9 +31,7 @@ void *xalloc(size_t s)
 	if (res)
 		return res;
 
-	fprintf(stderr, "malloc(%ld) failed\n", (long)s);
-	abort();
-	return NULL;
+	die("malloc(%ld) failed", (long)s);
 }
 
 void *xrealloc(void *p, size_t s)
@@ -33,8 +41,7 @@ void *xrealloc(void *p, size_t s)
 		if (res)
 			return res;
 
-		fprintf(stderr, "malloc(%ld) failed\n", (long)s);
-		abort();
+		die("realloc(%ld) failed", (long)s);
 	}
 	else {
 		free(p);
@@ -54,8 +61,7 @@ size_t xsprintf(char **buf, const char *fmt, ...)
 	if (res >= 0)
 		return res;
 
-	fprintf(stderr, "asprintf failed\n");
-	abort();
+	die("asprintf failed");
 }
 
 static void safe_strerror(int errnum, char *buf, size_t sz)
@@ -87,8 +93,7 @@ void check_syscall(const char *name, int ok)
 		char buf[100];
 		int en = errno;
 		safe_strerror(en, buf, 100);
-		fprintf(stderr, "fatal error: %s: %s (%d)\n", name, buf, en);
-		abort();
+		die("fatal error: %s: %s (%d)", name, buf, en);
 	}
 }
 
@@ -97,8 +102,7 @@ void check_pthreads(const char *name, int res)
 	if (res) {
 		char buf[100];
 		safe_strerror(res, buf, 100);
-		fprintf(stderr, "fatal error: %s: %s (%d)\n", name, buf, res);
-		abort();
+		die("fatal error: %s: %s (%d)", name, buf, res);
 	}
 }
 

@@ -61,7 +61,7 @@ static ssize_t finish_prebody(struct http_writer *w,
 		return 0;
 
 	default:
-		abort();
+		die("bad http_writer state %d", w->state);
 	}
 }
 
@@ -78,7 +78,8 @@ ssize_t http_writer_write(struct http_writer *w, void *buf, size_t len,
 enum http_writer_end_result http_writer_end(struct http_writer *w,
 					    struct tasklet *t, struct error *e)
 {
-	switch (finish_prebody(w, t, e)) {
+	ssize_t res = finish_prebody(w, t, e);
+	switch (res) {
 	case STREAM_WAITING:
 		return HTTP_WRITER_END_WAITING;
 
@@ -90,6 +91,6 @@ enum http_writer_end_result http_writer_end(struct http_writer *w,
 		return HTTP_WRITER_END_DONE;
 
 	default:
-		abort();
+		die("bad http_writer finish_prebody return %ld", (long)res);
 	}
 }

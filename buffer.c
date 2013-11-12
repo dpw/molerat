@@ -109,6 +109,5 @@ void growbuf_printf(struct growbuf *growbuf, const char *fmt, ...)
 		grow(growbuf);
 	}
 
-	fprintf(stderr, "vsnprintf failed\n");
-	abort();
+	die("vsnprintf failed");
 }

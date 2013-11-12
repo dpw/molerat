@@ -138,10 +138,8 @@ static void tester_destroy(struct tester *t)
 
 static void check_error(struct error *err)
 {
-	if (!error_ok(err)) {
-		fprintf(stderr, "%s\n", error_message(err));
-		abort();
-	}
+	if (!error_ok(err))
+		die("%s", error_message(err));
 }
 
 static void tester_check(struct tester *t)
@@ -150,11 +148,8 @@ static void tester_check(struct tester *t)
 	check_error(&t->read_err);
 
 	if (t->write_len != t->read_pos
-	    || memcmp(t->write_buf, t->read_buf, t->write_len)) {
-		fprintf(stderr, "Data returned from echo server"
-			" did not match data sent\n");
-		abort();
-	}
+	    || memcmp(t->write_buf, t->read_buf, t->write_len))
+		die("Data returned from echo server did not match data sent");
 }
 
 static void test_echo_server(struct echo_server *es, struct socket *s)

@@ -14,6 +14,7 @@ void growbuf_init(struct growbuf *growbuf, size_t capacity)
 {
 	growbuf->end = growbuf->start = xalloc(capacity);
 	growbuf->limit = growbuf->start + capacity;
+	growbuf->frozen = FALSE;
 }
 
 void growbuf_fini(struct growbuf *growbuf)
@@ -21,17 +22,23 @@ void growbuf_fini(struct growbuf *growbuf)
 	free(growbuf->start);
 }
 
+void growbuf_reset(struct growbuf *growbuf)
+{
+	growbuf->end = growbuf->start;
+	growbuf->frozen = FALSE;
+}
+
 void growbuf_to_drainbuf(struct growbuf *growbuf, struct drainbuf *drainbuf)
 {
 	/* Mark that the growbuf can no longer be grown */
-	growbuf->limit = NULL;
+	growbuf->frozen = TRUE;
 	drainbuf->pos = growbuf->start;
 	drainbuf->end = growbuf->end;
 }
 
 void growbuf_shift(struct growbuf *growbuf, size_t pos)
 {
-	assert(growbuf->limit);
+	assert(!growbuf_frozen(growbuf));
 	if (!pos)
 		return;
 
@@ -43,7 +50,7 @@ void growbuf_shift(struct growbuf *growbuf, size_t pos)
 
 void *growbuf_reserve(struct growbuf *growbuf, size_t need)
 {
-	assert(growbuf->limit);
+	assert(!growbuf_frozen(growbuf));
 	assert(growbuf->limit - growbuf->end >= 0);
 
 	if (need > (size_t)(growbuf->limit - growbuf->end)) {
@@ -82,32 +89,39 @@ static void grow(struct growbuf *growbuf)
 	growbuf->end = growbuf->start + used;
 }
 
-void growbuf_printf(struct growbuf *growbuf, const char *fmt, ...)
+void growbuf_vprintf(struct growbuf *growbuf, const char *fmt, va_list ap)
 {
-	assert(growbuf->limit);
+	assert(!growbuf_frozen(growbuf));
 
 	for (;;) {
 		long space = growbuf->limit - growbuf->end;
-		va_list ap;
+		va_list ap2;
 		int res;
 
-		va_start(ap, fmt);
-		res = vsnprintf(growbuf->end, space, fmt, ap);
-		va_end(ap);
+		va_copy(ap2, ap);
+		res = vsnprintf(growbuf->end, space, fmt, ap2);
+		va_end(ap2);
 
 		if (res < 0)
-			break;
+			die("vsnprintf failed");
 
 		/* vsnprintf returns the number of characters it would
 		   have written.  That excludes the trailing null,
 		   which we don't care about. */
 		if (res <= space) {
 			growbuf->end += res;
-			return;
+			break;
 		}
 
 		grow(growbuf);
 	}
+}
 
-	die("vsnprintf failed");
+void growbuf_printf(struct growbuf *growbuf, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	growbuf_vprintf(growbuf, fmt, ap);
+	va_end(ap);
 }

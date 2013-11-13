@@ -13,7 +13,7 @@ struct socket {
 struct socket_ops {
 	ssize_t (*read)(struct socket *s, void *buf, size_t len,
 			struct tasklet *t, struct error *e);
-	ssize_t (*write)(struct socket *s, void *buf,  size_t len,
+	ssize_t (*write)(struct socket *s, const void *buf,  size_t len,
 			 struct tasklet *t, struct error *e);
 	struct sockaddr *(*address)(struct socket *s, struct error *e);
 	struct sockaddr *(*peer_address)(struct socket *s, struct error *e);
@@ -46,8 +46,9 @@ static inline ssize_t socket_read(struct socket *s, void *buf, size_t len,
 	return s->ops->read(s, buf, len, t, e);
 }
 
-static inline ssize_t socket_write(struct socket *s, void *buf, size_t len,
-				   struct tasklet *t, struct error *e)
+static inline ssize_t socket_write(struct socket *s, const void *buf,
+				   size_t len, struct tasklet *t,
+				   struct error *e)
 {
 	return s->ops->write(s, buf, len, t, e);
 }

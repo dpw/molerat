@@ -22,10 +22,14 @@ struct http_writer {
 void http_writer_init(struct http_writer *w, struct socket *socket);
 void http_writer_fini(struct http_writer *w);
 
-void http_writer_start_request(struct http_writer *w, const char *url);
-void http_writer_write_header(struct http_writer *w, const char *name,
-			      const char *val);
-ssize_t http_writer_write(struct http_writer *w, void *buf, size_t len,
+void http_writer_request(struct http_writer *w, const char *url);
+void http_writer_response(struct http_writer *w, int status,
+			  const char *message);
+void http_writer_header(struct http_writer *w, const char *name,
+			const char *val);
+void http_writer_headerf(struct http_writer *w, const char *name,
+			 const char *fmt, ...);
+ssize_t http_writer_write(struct http_writer *w, const void *buf, size_t len,
 			  struct tasklet *t, struct error *e);
 
 enum http_writer_end_result {

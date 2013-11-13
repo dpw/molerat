@@ -1,3 +1,5 @@
+#include <stdarg.h>
+
 #include "http_writer.h"
 #include "socket.h"
 
@@ -13,21 +15,46 @@ void http_writer_fini(struct http_writer *w)
 	growbuf_fini(&w->prebody);
 }
 
-void http_writer_start_request(struct http_writer *w, const char *url)
+void http_writer_request(struct http_writer *w, const char *url)
 {
 	assert(w->state == HTTP_WRITER_INIT);
+	growbuf_reset(&w->prebody);
 	growbuf_printf(&w->prebody, "GET %s HTTP/1.1\r\n", url);
 	w->state = HTTP_WRITER_HEADERS;
 }
 
-void http_writer_write_header(struct http_writer *w, const char *name,
-			      const char *val)
+void http_writer_response(struct http_writer *w, int status,
+			  const char *message)
+{
+	assert(w->state == HTTP_WRITER_INIT);
+	growbuf_reset(&w->prebody);
+	growbuf_printf(&w->prebody, "HTTP/1.1 %d %s\r\n", status, message);
+	w->state = HTTP_WRITER_HEADERS;
+}
+
+void http_writer_header(struct http_writer *w, const char *name,
+			const char *val)
 {
 	assert(w->state == HTTP_WRITER_HEADERS);
 	growbuf_append_string(&w->prebody, name);
 	growbuf_append_string(&w->prebody, ": ");
 	growbuf_append_string(&w->prebody, val);
 	growbuf_append_string(&w->prebody, "\r\n");
+}
+
+void http_writer_headerf(struct http_writer *w, const char *name,
+			 const char *fmt, ...)
+{
+	va_list ap;
+
+	assert(w->state == HTTP_WRITER_HEADERS);
+
+	va_start(ap, fmt);
+	growbuf_append_string(&w->prebody, name);
+	growbuf_append_string(&w->prebody, ": ");
+	growbuf_vprintf(&w->prebody, fmt, ap);
+	growbuf_append_string(&w->prebody, "\r\n");
+	va_end(ap);
 }
 
 static ssize_t finish_prebody(struct http_writer *w,
@@ -65,7 +92,7 @@ static ssize_t finish_prebody(struct http_writer *w,
 	}
 }
 
-ssize_t http_writer_write(struct http_writer *w, void *buf, size_t len,
+ssize_t http_writer_write(struct http_writer *w, const void *buf, size_t len,
 			  struct tasklet *t, struct error *e)
 {
 	ssize_t res = finish_prebody(w, t, e);

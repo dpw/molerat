@@ -7,6 +7,7 @@
 
 #include "http_server.h"
 #include "http_reader.h"
+#include "http_writer.h"
 
 struct http_server {
 	struct mutex mutex;
@@ -30,9 +31,9 @@ struct connection {
 	struct socket *socket;
 	struct error err;
 	struct http_reader reader;
-	char *write_buf;
-	size_t write_len;
-	size_t write_pos;
+	struct http_writer writer;
+	size_t body_len;
+	size_t body_pos;
 };
 
 static void http_server_accept(void *v_hs);
@@ -165,10 +166,10 @@ static void http_server_accept(void *v_hs)
 	error_fini(&err);
 }
 
-static void connection_write(void *v_c);
 static void connection_read_body(void *v_c);
 static void connection_read_prebody(void *v_c);
-
+static void respond(struct connection *c);
+static void connection_write(void *v_c);
 static void connection_timeout(void *v_c);
 
 static void update_timeout(struct connection *c)
@@ -189,7 +190,7 @@ static struct connection *connection_create(struct http_server *server,
 	tasklet_init(&conn->timeout_tasklet, &conn->mutex, conn);
 	error_init(&conn->err);
 	http_reader_init(&conn->reader, s, TRUE);
-	conn->write_buf = NULL;
+	http_writer_init(&conn->writer, s);
 	add_connection(server, conn);
 
 	tasklet_later(&conn->tasklet, connection_read_prebody);
@@ -209,28 +210,11 @@ static void connection_destroy_locked(struct connection *conn)
 	timer_fini(&conn->timeout);
 	tasklet_fini(&conn->timeout_tasklet);
 	http_reader_fini(&conn->reader);
+	http_writer_fini(&conn->writer);
 	socket_destroy(conn->socket);
-	free(conn->write_buf);
 	error_fini(&conn->err);
 	mutex_unlock_fini(&conn->mutex);
 	free(conn);
-}
-
-static const char body[] = "<html><body><h1>Hello from Molerat</h1><form action='/' method='post'><input type='hidden' name='foo' value='bar'><input type='submit' value='Send a POST request'></form></body></html>";
-
-static void construct_response(struct connection *c)
-{
-	assert(!c->write_buf);
-
-	c->write_len = xsprintf(&c->write_buf,
-			"HTTP/1.1 200 OK\r\n"
-			"Server: Molerat\r\n"
-			"Content-Length: %lu\r\n"
-			"Content-Type: text/html; charset=utf-8\r\n"
-			"\r\n"
-			"%s",
-			(unsigned long)strlen(body), body);
-	c->write_pos = 0;
 }
 
 static void dump_headers(struct http_reader *r)
@@ -261,8 +245,6 @@ static void connection_read_prebody(void *v_c)
 
 	case HTTP_READER_PREBODY_DONE:
 		dump_headers(&c->reader);
-		construct_response(c);
-		timer_cancel(&c->timeout);
 		tasklet_now(&c->tasklet, connection_read_body);
 		return;
 
@@ -302,23 +284,48 @@ static void connection_read_body(void *v_c)
 			return;
 
 		case STREAM_END:
-			tasklet_now(&c->tasklet, connection_write);
+			respond(c);
 			return;
+
+		default:
+			assert(res >= 0);
+			break;
 		}
 
 		fprintf(stderr, "Read %ld body bytes\n", (long)res);
 	}
 }
 
+static const char body[] = "<html><body><h1>Hello from Molerat</h1><form action='/' method='post'><input type='hidden' name='foo' value='bar'><input type='submit' value='Send a POST request'></form></body></html>";
+
+
+static void respond(struct connection *c)
+{
+	timer_cancel(&c->timeout);
+
+	c->body_len = strlen(body);
+	c->body_pos = 0;
+
+	http_writer_response(&c->writer, 200, "OK");
+	http_writer_header(&c->writer, "Server","Molerat");
+	http_writer_headerf(&c->writer, "Content-Length", "%lu",
+			    (unsigned long)c->body_len);
+	http_writer_header(&c->writer, "Content-Type",
+			   "text/html; charset=utf-8");
+
+	tasklet_now(&c->tasklet, connection_write);
+}
+
+
 static void connection_write(void *v_c)
 {
 	struct connection *c = v_c;
 
-	while (c->write_pos != c->write_len) {
-		ssize_t res = socket_write(c->socket,
-					   c->write_buf + c->write_pos,
-					   c->write_len - c->write_pos,
-					   &c->tasklet, &c->err);
+	while (c->body_pos < c->body_len) {
+		ssize_t res = http_writer_write(&c->writer,
+						body + c->body_pos,
+						c->body_len - c->body_pos,
+						&c->tasklet, &c->err);
 		switch (res) {
 		case STREAM_WAITING:
 			mutex_unlock(&c->mutex);
@@ -328,13 +335,15 @@ static void connection_write(void *v_c)
 			fprintf(stderr, "Error: %s\n", error_message(&c->err));
 			connection_destroy_locked(c);
 			return;
+
+		default:
+			assert(res >= 0);
+			break;
 		}
 
-		c->write_pos += res;
+		c->body_pos += res;
 	}
 
-	free(c->write_buf);
-	c->write_buf = NULL;
 	tasklet_later(&c->tasklet, connection_read_prebody);
 	mutex_unlock(&c->mutex);
 }

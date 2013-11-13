@@ -30,9 +30,9 @@ struct http_client *http_client_create(struct socket *s, const char *host)
 	http_writer_init(&c->writer, s);
 	http_reader_init(&c->reader, s, FALSE);
 
-	http_writer_start_request(&c->writer, "/");
-	http_writer_write_header(&c->writer, "Connection", "close");
-	http_writer_write_header(&c->writer, "Host", host);
+	http_writer_request(&c->writer, "/");
+	http_writer_header(&c->writer, "Connection", "close");
+	http_writer_header(&c->writer, "Host", host);
 
 	mutex_lock(&c->mutex);
 	tasklet_now(&c->tasklet, write_request);

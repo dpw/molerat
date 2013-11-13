@@ -316,7 +316,7 @@ static ssize_t simple_socket_read(struct socket *gs, void *buf, size_t len,
 }
 
 static ssize_t simple_socket_write_locked(struct simple_socket *s,
-					  void *buf, size_t len,
+					  const void *buf, size_t len,
 					  struct tasklet *t, struct error *e)
 {
 	if (s->fd >= 0) {
@@ -340,8 +340,9 @@ static ssize_t simple_socket_write_locked(struct simple_socket *s,
 	return STREAM_ERROR;
 }
 
-static ssize_t simple_socket_write(struct socket *gs, void *buf, size_t len,
-				   struct tasklet *t, struct error *e)
+static ssize_t simple_socket_write(struct socket *gs, const void *buf,
+				   size_t len, struct tasklet *t,
+				   struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
 	ssize_t res;
@@ -637,8 +638,9 @@ static ssize_t client_socket_read(struct socket *gs, void *buf, size_t len,
 	return res;
 }
 
-static ssize_t client_socket_write(struct socket *gs, void *buf, size_t len,
-				  struct tasklet *t, struct error *e)
+static ssize_t client_socket_write(struct socket *gs, const void *buf,
+				   size_t len, struct tasklet *t,
+				   struct error *e)
 {
 	struct client_socket *s = (struct client_socket *)gs;
 	ssize_t res;

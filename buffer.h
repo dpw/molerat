@@ -1,6 +1,7 @@
 #ifndef MOLERAT_BUFFER_H
 #define MOLERAT_BUFFER_H
 
+#include <stdarg.h>
 #include <assert.h>
 
 #include "base.h"
@@ -34,21 +35,24 @@ struct growbuf {
 	char *start;
 	char *limit;
 	char *end;
+	bool_t frozen;
 };
 
 void growbuf_init(struct growbuf *growbuf, size_t capacity);
 void growbuf_fini(struct growbuf *growbuf);
+void growbuf_reset(struct growbuf *growbuf);
 void growbuf_to_drainbuf(struct growbuf *growbuf, struct drainbuf *drainbuf);
 void *growbuf_reserve(struct growbuf *growbuf, size_t need);
 void growbuf_shift(struct growbuf *growbuf, size_t pos);
 void growbuf_append(struct growbuf *growbuf, const void *data, size_t len);
 void growbuf_append_string(struct growbuf *growbuf, const char *s);
 void growbuf_printf(struct growbuf *growbuf, const char *fmt, ...);
+void growbuf_vprintf(struct growbuf *growbuf, const char *fmt, va_list ap);
 void growbuf_to_drainbuf(struct growbuf *growbuf, struct drainbuf *drainbuf);
 
 static inline bool_t growbuf_frozen(struct growbuf *growbuf)
 {
-	return !growbuf->limit;
+	return growbuf->frozen;
 }
 
 static inline size_t growbuf_length(struct growbuf *growbuf)
@@ -68,7 +72,7 @@ static inline size_t growbuf_offset_of(struct growbuf *growbuf, void *p)
 
 static inline size_t growbuf_space(struct growbuf *growbuf)
 {
-	assert(growbuf->limit);
+	assert(!growbuf_frozen(growbuf));
 	return growbuf->limit - growbuf->end;
 }
 

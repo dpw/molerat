@@ -306,7 +306,7 @@ static void respond(struct connection *c)
 	c->body_len = strlen(body);
 	c->body_pos = 0;
 
-	http_writer_response(&c->writer, 200, "OK");
+	http_writer_response(&c->writer, 200);
 	http_writer_header(&c->writer, "Server","Molerat");
 	http_writer_headerf(&c->writer, "Content-Length", "%lu",
 			    (unsigned long)c->body_len);

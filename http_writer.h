@@ -23,8 +23,7 @@ void http_writer_init(struct http_writer *w, struct socket *socket);
 void http_writer_fini(struct http_writer *w);
 
 void http_writer_request(struct http_writer *w, const char *url);
-void http_writer_response(struct http_writer *w, int status,
-			  const char *message);
+void http_writer_response(struct http_writer *w, int status);
 void http_writer_header(struct http_writer *w, const char *name,
 			const char *val);
 void http_writer_headerf(struct http_writer *w, const char *name,

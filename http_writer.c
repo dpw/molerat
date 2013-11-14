@@ -1,6 +1,7 @@
 #include <stdarg.h>
 
 #include "http_writer.h"
+#include "http_status.h"
 #include "socket.h"
 
 void http_writer_init(struct http_writer *w, struct socket *socket)
@@ -23,12 +24,16 @@ void http_writer_request(struct http_writer *w, const char *url)
 	w->state = HTTP_WRITER_HEADERS;
 }
 
-void http_writer_response(struct http_writer *w, int status,
-			  const char *message)
+void http_writer_response(struct http_writer *w, int code)
 {
+	struct http_status *status = http_status_lookup(code);
+
 	assert(w->state == HTTP_WRITER_INIT);
+	if (!status)
+		die("unknown HTTP status code %d", code);
+
 	growbuf_reset(&w->prebody);
-	growbuf_printf(&w->prebody, "HTTP/1.1 %d %s\r\n", status, message);
+	growbuf_append(&w->prebody, status->message, status->message_len);
 	w->state = HTTP_WRITER_HEADERS;
 }
 

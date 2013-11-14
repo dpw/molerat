@@ -84,8 +84,9 @@ static void consumer(void *v_t)
 			return;
 		}
 
-		assert(*item == t->consumer_count++);
+		assert(*item == t->consumer_count);
 		free(item);
+		t->consumer_count++;
 	}
 }
 

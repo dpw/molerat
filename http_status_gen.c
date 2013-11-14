@@ -81,14 +81,14 @@ static struct status codes[] = {
 
 int search(unsigned int table_size)
 {
-	int mult;
+	unsigned int mult;
 	unsigned int i, hash;
 	unsigned int mask = table_size - 1;
-	int *hits = xalloc(table_size * sizeof *hits);
+	unsigned int *hits = xalloc(table_size * sizeof *hits);
 
 	memset(hits, 0, table_size * sizeof *hits);
 
-	for (mult = 1024; mult < 2048; mult++) {
+	for (mult = 1; mult < table_size << 10; mult += 2) {
 		for (i = 0;; i++) {
 			if (i == N_CODES)
 				/* Success */
@@ -117,13 +117,13 @@ int search(unsigned int table_size)
 	return mult;
 }
 
-void dump(unsigned int table_size, int mult)
+void dump(unsigned int table_size, unsigned int mult)
 {
 	unsigned char *table = xalloc(table_size * sizeof *table);
 	unsigned int i;
 	unsigned int mask = table_size - 1;
 
-	memset(table, 0, table_size * sizeof *table);
+	memset(table, 255, table_size * sizeof *table);
 
 	for (i = 0; i < N_CODES; i++)
 		table[((codes[i].code * mult) >> 10) & mask] = i;
@@ -132,7 +132,7 @@ void dump(unsigned int table_size, int mult)
 
 	printf("static unsigned char table[] = { ");
 	for (i = 0; i < table_size; i++)
-		printf("%d, ", (int)table[i] + 1);
+		printf("%d, ", (int)table[i]);
 	printf("};\n\n");
 
 	printf("static struct http_status statuses[] = {\n");
@@ -144,9 +144,9 @@ void dump(unsigned int table_size, int mult)
 
 	printf("struct http_status *http_status_lookup(int code)\n"
 	       "{\n"
-	       "\tint n = table[((code * %d) >> 10) & %d];\n"
-	       "\tif (n && statuses[n - 1].code == code)\n"
-	       "\t\treturn &statuses[n - 1];\n"
+	       "\tunsigned int n = table[((code * %d) >> 10) & %d];\n"
+	       "\tif (n != 255 && statuses[n].code == code)\n"
+	       "\t\treturn &statuses[n];\n"
 	       "\telse\n"
 	       "\t\treturn 0;\n"
 	       "}\n",

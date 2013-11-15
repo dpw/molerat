@@ -86,7 +86,7 @@ static struct echoer *echoer_create(struct socket *s, bool_t verbose)
 	e->verbose = verbose;
 
 	mutex_lock(&e->mutex);
-	tasklet_now(&e->tasklet, echoer_echo);
+	tasklet_goto(&e->tasklet, echoer_echo);
 
 	return e;
 }
@@ -156,7 +156,7 @@ struct echo_server *echo_server_create(struct server_socket *s,
 	es->verbose = verbose;
 
 	mutex_lock(&es->mutex);
-	tasklet_now(&es->tasklet, echo_server_accept);
+	tasklet_goto(&es->tasklet, echo_server_accept);
 
 	return es;
 }

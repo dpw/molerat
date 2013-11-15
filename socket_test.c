@@ -115,10 +115,10 @@ struct tester *tester_create(struct socket *s)
 	error_init(&t->read_err);
 
 	mutex_lock(&t->mutex);
-	tasklet_now(&t->write_tasklet, tester_write);
+	tasklet_goto(&t->write_tasklet, tester_write);
 
 	mutex_lock(&t->mutex);
-	tasklet_now(&t->read_tasklet, tester_read);
+	tasklet_goto(&t->read_tasklet, tester_read);
 
 	return t;
 }

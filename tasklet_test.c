@@ -27,7 +27,7 @@ struct test_tasklet *test_tasklet_create(struct wait_list *sema)
 	tt->got = 0;
 
 	mutex_lock(&tt->mutex);
-	tasklet_now(&tt->tasklet, test_tasklet_wait);
+	tasklet_goto(&tt->tasklet, test_tasklet_wait);
 
 	return tt;
 }

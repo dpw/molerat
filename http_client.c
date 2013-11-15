@@ -35,7 +35,7 @@ struct http_client *http_client_create(struct socket *s, const char *host)
 	http_writer_header(&c->writer, "Host", host);
 
 	mutex_lock(&c->mutex);
-	tasklet_now(&c->tasklet, write_request);
+	tasklet_goto(&c->tasklet, write_request);
 	return c;
 }
 
@@ -67,7 +67,7 @@ static void write_request(void *v_c)
 
 	case HTTP_WRITER_END_DONE:
 		socket_partial_close(c->socket, 1, 0, &c->err);
-		tasklet_now(&c->tasklet, read_response_prebody);
+		tasklet_goto(&c->tasklet, read_response_prebody);
 	}
 }
 
@@ -82,7 +82,7 @@ static void read_response_prebody(void *v_c)
 		return;
 
 	case HTTP_READER_PREBODY_DONE:
-		tasklet_now(&c->tasklet, read_response_body);
+		tasklet_goto(&c->tasklet, read_response_body);
 		return;
 
 	case HTTP_READER_PREBODY_CLOSED:

@@ -443,7 +443,7 @@ static struct client_socket *client_socket_create(
 	/* Start connecting */
 	mutex_lock(&s->base.mutex);
 	start_connecting(c);
-	tasklet_now(&c->tasklet, finish_connecting);
+	tasklet_goto(&c->tasklet, finish_connecting);
 
 	return s;
 }

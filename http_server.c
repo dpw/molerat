@@ -55,7 +55,7 @@ struct http_server *http_server_create(struct server_socket *s,
 		= xalloc(hs->connections_size * sizeof *hs->connections);
 
 	mutex_lock(&hs->mutex);
-	tasklet_now(&hs->tasklet, http_server_accept);
+	tasklet_goto(&hs->tasklet, http_server_accept);
 
 	return hs;
 }
@@ -195,7 +195,7 @@ static struct connection *connection_create(struct http_server *server,
 
 	tasklet_later(&conn->tasklet, connection_read_prebody);
 	mutex_lock(&conn->mutex);
-	tasklet_now(&conn->timeout_tasklet, connection_timeout);
+	tasklet_goto(&conn->timeout_tasklet, connection_timeout);
 
 	return conn;
 }
@@ -245,7 +245,7 @@ static void connection_read_prebody(void *v_c)
 
 	case HTTP_READER_PREBODY_DONE:
 		dump_headers(&c->reader);
-		tasklet_now(&c->tasklet, connection_read_body);
+		tasklet_goto(&c->tasklet, connection_read_body);
 		return;
 
 	case HTTP_READER_PREBODY_CLOSED:
@@ -313,7 +313,7 @@ static void respond(struct connection *c)
 	http_writer_header(&c->writer, "Content-Type",
 			   "text/html; charset=utf-8");
 
-	tasklet_now(&c->tasklet, connection_write);
+	tasklet_goto(&c->tasklet, connection_write);
 }
 
 

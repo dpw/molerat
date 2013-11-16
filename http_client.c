@@ -59,6 +59,7 @@ static void write_request(void *v_c)
 	case HTTP_WRITER_END_ERROR:
 		fprintf(stderr, "Error: %s\n", error_message(&c->err));
 		tasklet_stop(&c->tasklet);
+		application_stop();
 		/* fall through */
 
 	case HTTP_WRITER_END_WAITING:

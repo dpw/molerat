@@ -8,6 +8,13 @@ typedef unsigned char bool_t;
 #define TRUE 1
 #define FALSE 0
 
+#define container_of(ptr, type, member) \
+	({ const typeof(((type *)0)->member ) *__mptr = (ptr); \
+	   ((type *)((char *)__mptr - offsetof(type,member))); })
+
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
 #define pointer_bits(p) ((uintptr_t)(p) & 3)
 #define pointer_clear_bits(p) ((void *)((uintptr_t)(p) & -4))
 #define pointer_set_bits(p, bits) ((void *)((uintptr_t)(p) | (bits)))

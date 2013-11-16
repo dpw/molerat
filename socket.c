@@ -274,84 +274,75 @@ static struct sockaddr *simple_socket_peer_address(struct socket *gs,
 	return get_socket_peer_address(s->fd, err);
 }
 
-static ssize_t simple_socket_read_locked(struct simple_socket *s,
-					 void *buf, size_t len,
-					 struct tasklet *t, struct error *e)
-{
-	if (s->fd >= 0) {
-		ssize_t res = read(s->fd, buf, len);
-		if (res > 0)
-			return res;
-
-		if (res == 0)
-			return len != 0 ? STREAM_END : 0;
-
-		if (would_block()) {
-			wait_list_wait(&s->reading, t);
-			watched_fd_set_interest(s->watched_fd, WATCHED_FD_IN);
-			return STREAM_WAITING;
-		}
-
-		error_errno(e, "read");
-	}
-	else {
-		error_set(e, ERROR_INVALID,
-			  "socket_read: closed socket");
-	}
-
-	return STREAM_ERROR;
-}
-
 static ssize_t simple_socket_read(struct stream *gs, void *buf, size_t len,
 				  struct tasklet *t, struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
 	ssize_t res;
+
 	assert(((struct socket *)gs)->ops == &simple_socket_ops);
-
 	mutex_lock(&s->mutex);
-	res = simple_socket_read_locked(s, buf, len, t, e);
-	mutex_unlock(&s->mutex);
-	return res;
-}
 
-static ssize_t simple_socket_write_locked(struct simple_socket *s,
-					  const void *buf, size_t len,
-					  struct tasklet *t, struct error *e)
-{
 	if (s->fd >= 0) {
-		ssize_t res = write(s->fd, buf, len);
-		if (res >= 0)
-			return res;
+		res = read(s->fd, buf, len);
+		if (likely(res > 0))
+			goto out;
 
-		if (would_block()) {
-			wait_list_wait(&s->writing, t);
-			watched_fd_set_interest(s->watched_fd, WATCHED_FD_OUT);
-			return STREAM_WAITING;
+		if (res == 0) {
+			res = len != 0 ? STREAM_END : 0;
+			goto out;
 		}
 
-		error_errno(e, "write");
+		if (would_block()) {
+			wait_list_wait(&s->reading, t);
+			watched_fd_set_interest(s->watched_fd, WATCHED_FD_IN);
+			res = STREAM_WAITING;
+			goto out;
+		}
+
+		error_errno(e, "read");
 	}
 	else {
-		error_set(e, ERROR_INVALID,
-			  "socket_write: closed socket");
+		error_set(e, ERROR_INVALID, "socket_read: closed socket");
 	}
 
-	return STREAM_ERROR;
+	res = STREAM_ERROR;
+ out:
+	mutex_unlock(&s->mutex);
+	return res;
 }
 
 static ssize_t simple_socket_write(struct stream *gs, const void *buf,
-				   size_t len, struct tasklet *t,
-				   struct error *e)
+                                  size_t len, struct tasklet *t,
+                                  struct error *e)
 {
-	struct simple_socket *s = (struct simple_socket *)gs;
-	ssize_t res;
-	assert(((struct socket *)gs)->ops == &simple_socket_ops);
+       struct simple_socket *s = (struct simple_socket *)gs;
+       ssize_t res;
 
-	mutex_lock(&s->mutex);
-	res = simple_socket_write_locked(s, buf, len, t, e);
-	mutex_unlock(&s->mutex);
-	return res;
+       assert(((struct socket *)gs)->ops == &simple_socket_ops);
+       mutex_lock(&s->mutex);
+
+       if (s->fd >= 0) {
+               res = write(s->fd, buf, len);
+               if (likely(res >= 0))
+                       goto out;
+
+               if (would_block()) {
+                       wait_list_wait(&s->writing, t);
+                       watched_fd_set_interest(s->watched_fd, WATCHED_FD_OUT);
+                       res = STREAM_WAITING;
+                       goto out;
+               }
+
+               error_errno(e, "write");
+       }
+       else {
+               error_set(e, ERROR_INVALID, "socket_write: closed socket");
+       }
+
+ out:
+       mutex_unlock(&s->mutex);
+       return res;
 }
 
 static void simple_socket_partial_close(struct socket *gs,
@@ -593,7 +584,9 @@ static void client_socket_close(struct stream *gs, struct error *e)
 	mutex_lock(&s->base.mutex);
 
 	if (!s->connector) {
-		simple_socket_close_locked(&s->base, e);
+		mutex_unlock(&s->base.mutex);
+		simple_socket_close(gs, e);
+		return;
 	}
 	else {
 		connector_destroy(s->connector);
@@ -626,7 +619,8 @@ static ssize_t client_socket_read(struct stream *gs, void *buf, size_t len,
 	mutex_lock(&s->base.mutex);
 
 	if (!s->connector) {
-		res = simple_socket_read_locked(&s->base, buf, len, t, e);
+		mutex_unlock(&s->base.mutex);
+		return simple_socket_read(gs, buf, len, t, e);
 	}
 	else if (connector_ok(s->connector, e)) {
 		wait_list_wait(&s->base.reading, t);
@@ -650,7 +644,8 @@ static ssize_t client_socket_write(struct stream *gs, const void *buf,
 	mutex_lock(&s->base.mutex);
 
 	if (!s->connector) {
-		res = simple_socket_write_locked(&s->base, buf, len, t, e);
+		mutex_unlock(&s->base.mutex);
+		return simple_socket_write(gs, buf, len, t, e);
 	}
 	else if (connector_ok(s->connector, e)) {
 		wait_list_wait(&s->base.writing, t);

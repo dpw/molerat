@@ -20,7 +20,7 @@ struct http_reader {
 	   contiguous body data. */
 	char *body_end;
 
-	struct socket *socket;
+	struct stream *stream;
 	struct growbuf prebody;
 	struct http_header_internal *headers;
 	int headers_used;
@@ -44,7 +44,7 @@ struct http_header_iter {
 };
 
 
-void http_reader_init(struct http_reader *r, struct socket *socket, bool_t req);
+void http_reader_init(struct http_reader *r, struct stream *stream, bool_t req);
 void http_reader_fini(struct http_reader *r);
 
 /* Result codes from http_reader_prebody */
@@ -75,7 +75,7 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 						    struct error *err);
 
 /* Read the message body.  The return value has the same conventions
-   as socket_read. */
+   as stream_read. */
 ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 			 struct tasklet *tasklet, struct error *err);
 

@@ -1,7 +1,7 @@
 #include <string.h>
 
 #include "http_reader.h"
-#include "socket.h"
+#include "stream.h"
 
 static int on_url(struct http_parser *hp, const char *at, size_t len);
 static int on_url_cont(struct http_parser *hp, const char *at, size_t len);
@@ -23,11 +23,11 @@ typedef struct http_header_internal {
 	int value_end;
 } header_t;
 
-void http_reader_init(struct http_reader *r, struct socket *socket, bool_t req)
+void http_reader_init(struct http_reader *r, struct stream *stream, bool_t req)
 {
 	r->state = HTTP_READER_PREBODY;
 	r->parsed = 0;
-	r->socket = socket;
+	r->stream = stream;
 	growbuf_init(&r->prebody, 1000);
 	r->headers_used = 0;
 	r->headers_size = 20;
@@ -106,7 +106,7 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 
 	waiting_result = HTTP_READER_PREBODY_WAITING;
 	for (;;) {
-		/* Read some data from the socket */
+		/* Read some data from the stream */
 
 		/* XXX we should ensure that the prebody buffer
 		   doesn't grow beyond INT_MAX, as we store offsets
@@ -114,7 +114,7 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 
 		size_t unparsed;
 		void *buf = growbuf_reserve(&r->prebody, 100);
-		ssize_t rlen = socket_read(r->socket, buf,
+		ssize_t rlen = stream_read(r->stream, buf,
 					   growbuf_space(&r->prebody),
 					   tasklet, err);
 		switch (rlen) {
@@ -155,7 +155,7 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 					   previously been 0, so this
 					   must be the first pass
 					   through the loop, and the
-					   socket read must have
+					   stream read must have
 					   returned STREAM_END. */
 					return HTTP_READER_PREBODY_CLOSED;
 
@@ -318,7 +318,7 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 		 prebody_left = growbuf_length(&r->prebody) - r->parsed;
 		if (!prebody_left)
 			/* Nothing in the prebody buffer, so read from
-			   the socket. */
+			   the stream. */
 			break;
 
 		len = http_parser_execute(&r->parser,
@@ -344,7 +344,7 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 	}
 
 	buf_pos = r->body_end;
-	got = socket_read(r->socket, buf_pos, len, tasklet, err);
+	got = stream_read(r->stream, buf_pos, len, tasklet, err);
 	switch (got) {
 	case STREAM_WAITING:
 	case STREAM_ERROR:
@@ -387,7 +387,7 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 	} while (got);
 
  done:
-	/* All the data read from the socket has been parsed. */
+	/* All the data read from the stream has been parsed. */
 	return r->body_end - buf;
 }
 

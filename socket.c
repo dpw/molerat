@@ -224,19 +224,19 @@ static void simple_socket_fini(struct simple_socket *s)
 	mutex_unlock_fini(&s->mutex);
 }
 
-static void simple_socket_destroy(struct socket *gs)
+static void simple_socket_destroy(struct stream *gs)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
-	assert(gs->ops == &simple_socket_ops);
+	assert(((struct socket *)gs)->ops == &simple_socket_ops);
 	mutex_lock(&s->mutex);
 	simple_socket_fini(s);
 	free(s);
 }
 
-static void simple_socket_close(struct socket *gs, struct error *e)
+static void simple_socket_close(struct stream *gs, struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
-	assert(gs->ops == &simple_socket_ops);
+	assert(((struct socket *)gs)->ops == &simple_socket_ops);
 	mutex_lock(&s->mutex);
 	simple_socket_close_locked(s, e);
 	mutex_unlock(&s->mutex);
@@ -302,12 +302,12 @@ static ssize_t simple_socket_read_locked(struct simple_socket *s,
 	return STREAM_ERROR;
 }
 
-static ssize_t simple_socket_read(struct socket *gs, void *buf, size_t len,
+static ssize_t simple_socket_read(struct stream *gs, void *buf, size_t len,
 				  struct tasklet *t, struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
 	ssize_t res;
-	assert(gs->ops == &simple_socket_ops);
+	assert(((struct socket *)gs)->ops == &simple_socket_ops);
 
 	mutex_lock(&s->mutex);
 	res = simple_socket_read_locked(s, buf, len, t, e);
@@ -340,13 +340,13 @@ static ssize_t simple_socket_write_locked(struct simple_socket *s,
 	return STREAM_ERROR;
 }
 
-static ssize_t simple_socket_write(struct socket *gs, const void *buf,
+static ssize_t simple_socket_write(struct stream *gs, const void *buf,
 				   size_t len, struct tasklet *t,
 				   struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
 	ssize_t res;
-	assert(gs->ops == &simple_socket_ops);
+	assert(((struct socket *)gs)->ops == &simple_socket_ops);
 
 	mutex_lock(&s->mutex);
 	res = simple_socket_write_locked(s, buf, len, t, e);
@@ -383,13 +383,15 @@ static void simple_socket_partial_close(struct socket *gs,
 }
 
 static struct socket_ops simple_socket_ops = {
-	simple_socket_read,
-	simple_socket_write,
+	{
+		simple_socket_destroy,
+		simple_socket_read,
+		simple_socket_write,
+		simple_socket_close,
+	},
+	simple_socket_partial_close,
 	simple_socket_address,
 	simple_socket_peer_address,
-	simple_socket_close,
-	simple_socket_partial_close,
-	simple_socket_destroy
 };
 
 
@@ -583,10 +585,10 @@ static bool_t connector_ok(struct connector *c, struct error *err)
 	return 0;
 }
 
-static void client_socket_close(struct socket *gs, struct error *e)
+static void client_socket_close(struct stream *gs, struct error *e)
 {
 	struct client_socket *s = (struct client_socket *)gs;
-	assert(gs->ops == &client_socket_ops);
+	assert(((struct socket *)gs)->ops == &client_socket_ops);
 
 	mutex_lock(&s->base.mutex);
 
@@ -601,10 +603,10 @@ static void client_socket_close(struct socket *gs, struct error *e)
 	mutex_unlock(&s->base.mutex);
 }
 
-static void client_socket_destroy(struct socket *gs)
+static void client_socket_destroy(struct stream *gs)
 {
 	struct client_socket *s = (struct client_socket *)gs;
-	assert(gs->ops == &client_socket_ops);
+	assert(((struct socket *)gs)->ops == &client_socket_ops);
 
 	mutex_lock(&s->base.mutex);
 
@@ -615,7 +617,7 @@ static void client_socket_destroy(struct socket *gs)
 	free(s);
 }
 
-static ssize_t client_socket_read(struct socket *gs, void *buf, size_t len,
+static ssize_t client_socket_read(struct stream *gs, void *buf, size_t len,
 				  struct tasklet *t, struct error *e)
 {
 	struct client_socket *s = (struct client_socket *)gs;
@@ -638,7 +640,7 @@ static ssize_t client_socket_read(struct socket *gs, void *buf, size_t len,
 	return res;
 }
 
-static ssize_t client_socket_write(struct socket *gs, const void *buf,
+static ssize_t client_socket_write(struct stream *gs, const void *buf,
 				   size_t len, struct tasklet *t,
 				   struct error *e)
 {
@@ -663,16 +665,16 @@ static ssize_t client_socket_write(struct socket *gs, const void *buf,
 }
 
 static struct socket_ops client_socket_ops = {
-	client_socket_read,
-	client_socket_write,
+	{
+		client_socket_destroy,
+		client_socket_read,
+		client_socket_write,
+		client_socket_close,
+	},
+	simple_socket_partial_close,
 	simple_socket_address,
 	simple_socket_peer_address,
-	client_socket_close,
-	simple_socket_partial_close,
-	client_socket_destroy
 };
-
-
 
 
 struct simple_server_socket {

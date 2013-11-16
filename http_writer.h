@@ -3,7 +3,7 @@
 
 #include "buffer.h"
 
-struct socket;
+struct stream;
 struct tasklet;
 struct error;
 
@@ -16,10 +16,10 @@ struct http_writer {
 	} state;
 	struct growbuf prebody;
 	struct drainbuf prebody_out;
-	struct socket *socket;
+	struct stream *stream;
 };
 
-void http_writer_init(struct http_writer *w, struct socket *socket);
+void http_writer_init(struct http_writer *w, struct stream *stream);
 void http_writer_fini(struct http_writer *w);
 
 void http_writer_request(struct http_writer *w, const char *url);

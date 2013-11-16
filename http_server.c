@@ -189,8 +189,8 @@ static struct connection *connection_create(struct http_server *server,
 	update_timeout(conn);
 	tasklet_init(&conn->timeout_tasklet, &conn->mutex, conn);
 	error_init(&conn->err);
-	http_reader_init(&conn->reader, s, TRUE);
-	http_writer_init(&conn->writer, s);
+	http_reader_init(&conn->reader, socket_stream(s), TRUE);
+	http_writer_init(&conn->writer, socket_stream(s));
 	add_connection(server, conn);
 
 	tasklet_later(&conn->tasklet, connection_read_prebody);

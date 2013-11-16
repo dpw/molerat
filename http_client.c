@@ -27,8 +27,8 @@ struct http_client *http_client_create(struct socket *s, const char *host)
 	tasklet_init(&c->tasklet, &c->mutex, c);
 	c->socket = s;
 	error_init(&c->err);
-	http_writer_init(&c->writer, s);
-	http_reader_init(&c->reader, s, FALSE);
+	http_writer_init(&c->writer, socket_stream(s));
+	http_reader_init(&c->reader, socket_stream(s), FALSE);
 
 	http_writer_request(&c->writer, "/");
 	http_writer_header(&c->writer, "Connection", "close");

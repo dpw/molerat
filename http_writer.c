@@ -2,12 +2,12 @@
 
 #include "http_writer.h"
 #include "http_status.h"
-#include "socket.h"
+#include "stream.h"
 
-void http_writer_init(struct http_writer *w, struct socket *socket)
+void http_writer_init(struct http_writer *w, struct stream *stream)
 {
 	w->state = HTTP_WRITER_INIT;
-	w->socket = socket;
+	w->stream = stream;
 	growbuf_init(&w->prebody, 1000);
 }
 
@@ -75,7 +75,7 @@ static ssize_t finish_prebody(struct http_writer *w,
 	case HTTP_WRITER_PREBODY: {
 		size_t len = drainbuf_length(&w->prebody_out);
 		while (len) {
-			ssize_t res = socket_write(w->socket,
+			ssize_t res = stream_write(w->stream,
 					      drainbuf_current(&w->prebody_out),
 					      len, t, e);
 			if (res < 0)
@@ -102,7 +102,7 @@ ssize_t http_writer_write(struct http_writer *w, const void *buf, size_t len,
 {
 	ssize_t res = finish_prebody(w, t, e);
 	if (res >= 0)
-		res = socket_write(w->socket, buf, len, t, e);
+		res = stream_write(w->stream, buf, len, t, e);
 
 	return res;
 }

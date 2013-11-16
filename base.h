@@ -73,9 +73,13 @@ static inline const char *error_message(struct error *e)
 }
 
 void error_reset(struct error *e);
-void error_set(struct error *e, unsigned int cat, const char *fmt, ...);
-void error_errno(struct error *e, const char *fmt, ...);
-void error_errno_val(struct error *e, int errnum, const char *fmt, ...);
-void error_invalid(struct error *e, const char *fmt, ...);
+void error_set(struct error *e, unsigned int cat, const char *fmt, ...)
+	__attribute__ ((format (printf, 3, 4)));
+void error_errno(struct error *e, const char *fmt, ...)
+	__attribute__ ((format (printf, 2, 3)));
+void error_errno_val(struct error *e, int errnum, const char *fmt, ...)
+	__attribute__ ((format (printf, 3, 4)));
+void error_invalid(struct error *e, const char *fmt, ...)
+	__attribute__ ((format (printf, 2, 3)));
 
 #endif

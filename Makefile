@@ -4,7 +4,7 @@ ifneq ($(shell ( echo "$(MAKE_VERSION)" ; echo "$(REQUIRED_MAKE_VERSION)" ) | so
 $(error GNU make version $(REQUIRED_MAKE_VERSION) required)
 endif
 
-CFLAGS=-Wall -Wextra -g -D_GNU_SOURCE
+CFLAGS=-Wall -Wextra -ansi -g -D_GNU_SOURCE
 
 VPATH=$(SRCDIR)
 SRCPATH=$(if $(SRCDIR),$(SRCDIR)/,)

@@ -16,7 +16,7 @@
 static int would_block(void)
 {
 	switch (errno) {
-		// POSIX says EWOULDBLOCK can be distinct from EAGAIN
+		/* POSIX says EWOULDBLOCK can be distinct from EAGAIN */
 #if EWOULDBLOCK != EAGAIN
 	case EWOULDBLOCK:
 #endif

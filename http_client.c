@@ -57,19 +57,25 @@ static void write_request(void *v_c)
 	ssize_t res = http_writer_end(&c->writer, &c->tasklet, &c->err);
 	switch (res) {
 	case HTTP_WRITER_END_ERROR:
-		fprintf(stderr, "Error: %s\n", error_message(&c->err));
-		tasklet_stop(&c->tasklet);
-		application_stop();
-		/* fall through */
+		goto error;
 
 	case HTTP_WRITER_END_WAITING:
-		mutex_unlock(&c->mutex);
-		return;
+		goto out;
 
 	case HTTP_WRITER_END_DONE:
-		socket_partial_close(c->socket, 1, 0, &c->err);
+		if (!socket_partial_close(c->socket, 1, 0, &c->err))
+			goto error;
+
 		tasklet_goto(&c->tasklet, read_response_prebody);
+		return;
 	}
+
+ error:
+	fprintf(stderr, "Error: %s\n", error_message(&c->err));
+	tasklet_stop(&c->tasklet);
+	application_stop();
+ out:
+	mutex_unlock(&c->mutex);
 }
 
 static void read_response_prebody(void *v_c)
@@ -93,13 +99,16 @@ static void read_response_prebody(void *v_c)
 		goto error;
 	}
 
-	socket_close(c->socket, &c->err);
+	if (!socket_close(c->socket, &c->err))
+		goto error;
+
 	fprintf(stderr, "Connection done\n");
+	goto out;
 
  error:
-	if (!error_ok(&c->err))
-		fprintf(stderr, "Error: %s\n", error_message(&c->err));
+	fprintf(stderr, "Error: %s\n", error_message(&c->err));
 
+ out:
 	tasklet_stop(&c->tasklet);
 	application_stop();
 	mutex_unlock(&c->mutex);

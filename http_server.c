@@ -255,13 +255,16 @@ static void connection_read_prebody(void *v_c)
 		goto error;
 	}
 
-	socket_close(c->socket, &c->err);
+	if (!socket_close(c->socket, &c->err))
+		goto error;
+
 	fprintf(stderr, "Connection done\n");
+	goto out;
 
  error:
-	if (!error_ok(&c->err))
-		fprintf(stderr, "Error: %s\n", error_message(&c->err));
+	fprintf(stderr, "Error: %s\n", error_message(&c->err));
 
+ out:
 	connection_destroy_locked(c);
 }
 

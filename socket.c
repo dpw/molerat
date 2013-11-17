@@ -204,16 +204,20 @@ static struct socket *simple_socket_create(int fd)
 	return &s->base;
 }
 
-static void simple_socket_close_locked(struct simple_socket *s,
-				       struct error *e)
+static bool_t simple_socket_close_locked(struct simple_socket *s,
+					 struct error *e)
 {
 	if (s->fd >= 0) {
 		watched_fd_destroy(s->watched_fd);
-		if (close(s->fd) < 0 && e)
+		if (close(s->fd) < 0 && e) {
 			error_errno(e, "close");
+			return FALSE;
+		}
 
 		s->fd = -1;
 	}
+
+	return TRUE;
 }
 
 static void simple_socket_fini(struct simple_socket *s)
@@ -233,13 +237,17 @@ static void simple_socket_destroy(struct stream *gs)
 	free(s);
 }
 
-static void simple_socket_close(struct stream *gs, struct error *e)
+static bool_t simple_socket_close(struct stream *gs, struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
+	bool_t res;
+
 	assert(((struct socket *)gs)->ops == &simple_socket_ops);
 	mutex_lock(&s->mutex);
-	simple_socket_close_locked(s, e);
+	res = simple_socket_close_locked(s, e);
 	mutex_unlock(&s->mutex);
+
+	return res;
 }
 
 static void simple_socket_wake_all(struct simple_socket *s)
@@ -345,12 +353,13 @@ static ssize_t simple_socket_write(struct stream *gs, const void *buf,
        return res;
 }
 
-static void simple_socket_partial_close(struct socket *gs,
-					bool_t writes, bool_t reads,
-					struct error *e)
+static bool_t simple_socket_partial_close(struct socket *gs,
+					  bool_t writes, bool_t reads,
+					  struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
 	int how;
+	bool_t res = TRUE;
 
 	if (writes) {
 		if (!reads)
@@ -360,17 +369,20 @@ static void simple_socket_partial_close(struct socket *gs,
 	}
 	else {
 		if (!reads)
-			return;
+			return TRUE;
 
 		how = SHUT_RD;
 	}
 
 	mutex_lock(&s->mutex);
 
-	if (shutdown(s->fd, how) < 0)
+	if (shutdown(s->fd, how) < 0) {
 		error_errno(e, "shutdown");
+		res = FALSE;
+	}
 
 	mutex_unlock(&s->mutex);
+	return res;
 }
 
 static struct socket_ops simple_socket_ops = {
@@ -576,24 +588,23 @@ static bool_t connector_ok(struct connector *c, struct error *err)
 	return 0;
 }
 
-static void client_socket_close(struct stream *gs, struct error *e)
+static bool_t client_socket_close(struct stream *gs, struct error *e)
 {
 	struct client_socket *s = (struct client_socket *)gs;
-	assert(((struct socket *)gs)->ops == &client_socket_ops);
 
+	assert(((struct socket *)gs)->ops == &client_socket_ops);
 	mutex_lock(&s->base.mutex);
 
 	if (!s->connector) {
 		mutex_unlock(&s->base.mutex);
-		simple_socket_close(gs, e);
-		return;
+		return simple_socket_close(gs, e);
 	}
 	else {
 		connector_destroy(s->connector);
 		s->connector = NULL;
+		mutex_unlock(&s->base.mutex);
+		return TRUE;
 	}
-
-	mutex_unlock(&s->base.mutex);
 }
 
 static void client_socket_destroy(struct stream *gs)

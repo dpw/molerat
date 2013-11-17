@@ -48,7 +48,6 @@ void growbuf_append(struct growbuf *growbuf, const void *data, size_t len);
 void growbuf_append_string(struct growbuf *growbuf, const char *s);
 void growbuf_printf(struct growbuf *growbuf, const char *fmt, ...);
 void growbuf_vprintf(struct growbuf *growbuf, const char *fmt, va_list ap);
-void growbuf_to_drainbuf(struct growbuf *growbuf, struct drainbuf *drainbuf);
 
 static inline bool_t growbuf_frozen(struct growbuf *growbuf)
 {

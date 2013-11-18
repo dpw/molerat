@@ -1,5 +1,5 @@
-#include "queue.h"
-#include "tasklet.h"
+#include <molerat/queue.h>
+#include <molerat/tasklet.h>
 
 struct test {
 	struct mutex mutex;

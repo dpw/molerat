@@ -4,7 +4,7 @@
 #include <stdarg.h>
 #include <assert.h>
 
-#include "base.h"
+#include <molerat/base.h>
 
 /* drainbufs don't own the underlying buffer */
 struct drainbuf {

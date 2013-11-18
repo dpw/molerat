@@ -1,8 +1,8 @@
 #ifndef MOLERAT_HTTP_READER_H
 #define MOLERAT_HTTP_READER_H
 
-#include "buffer.h"
-#include "http-parser/http_parser.h"
+#include <molerat/buffer.h>
+#include <http-parser/http_parser.h>
 
 struct socket;
 struct tasklet;

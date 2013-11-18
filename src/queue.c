@@ -1,8 +1,8 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "base.h"
-#include "queue.h"
+#include <molerat/base.h>
+#include <molerat/queue.h>
 
 void queue_init(struct queue *q, unsigned int max_size)
 {

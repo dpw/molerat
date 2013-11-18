@@ -1,7 +1,7 @@
 #ifndef MOLERAT_TIMER_H
 #define MOLERAT_TIMER_H
 
-#include "tasklet.h"
+#include <molerat/tasklet.h>
 
 struct timer {
 	struct poll_common *poll;

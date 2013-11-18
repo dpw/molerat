@@ -2,7 +2,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#include "buffer.h"
+#include <molerat/buffer.h>
 
 void drainbuf_advance(struct drainbuf *drainbuf, size_t step)
 {

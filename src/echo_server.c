@@ -1,7 +1,7 @@
 #include <stdio.h>
 
-#include "socket.h"
-#include "tasklet.h"
+#include <molerat/socket.h>
+#include <molerat/tasklet.h>
 
 #define BUF_SIZE 20
 

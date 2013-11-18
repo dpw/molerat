@@ -4,8 +4,8 @@
 #include <pthread.h>
 #include <assert.h>
 
-#include "skinny-mutex/skinny_mutex.h"
-#include "base.h"
+#include <skinny-mutex/skinny_mutex.h>
+#include <molerat/base.h>
 
 typedef pthread_t thread_handle_t;
 static inline thread_handle_t thread_handle_current(void)

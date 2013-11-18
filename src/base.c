@@ -12,7 +12,7 @@
 #endif
 #undef USE_GNU_DEFINED
 
-#include "base.h"
+#include <molerat/base.h>
 
 void die(const char *fmt, ...)
 {

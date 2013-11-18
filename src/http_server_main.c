@@ -1,8 +1,8 @@
 #include <stdio.h>
 
-#include "socket.h"
-#include "application.h"
-#include "http_server.h"
+#include <molerat/socket.h>
+#include <molerat/application.h>
+#include <molerat/http_server.h>
 
 int main(int argc, char **argv)
 {

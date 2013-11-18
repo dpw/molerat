@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "base.h"
+#include <molerat/base.h>
 
 #define DEBUG 0
 
@@ -128,7 +128,7 @@ void dump(unsigned int table_size, unsigned int mult)
 	for (i = 0; i < N_CODES; i++)
 		table[((codes[i].code * mult) >> 10) & mask] = i;
 
-	printf("#include \"http_status.h\"\n\n");
+	printf("#include <molerat/http_status.h>\n\n");
 
 	printf("static unsigned char table[] = { ");
 	for (i = 0; i < table_size; i++)

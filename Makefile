@@ -18,7 +18,7 @@ ROOT=$(filter-out ./,$(dir $(MAKEFILE)))
 VPATH=$(ROOT)
 
 # It's less likely that you'll want to override this
-PROJECT_CFLAGS=-D_GNU_SOURCE -iquote $(ROOT)src
+PROJECT_CFLAGS=-D_GNU_SOURCE -I$(ROOT)include
 
 # Principal source files under src/
 SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
@@ -30,11 +30,12 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 # Test source files under test/
 TEST_SRCS=buffer_test.c tasklet_test.c queue_test.c socket_test.c timer_test.c
 
-# Header files under src/
-HDRS=base.h buffer.h thread.h tasklet.h application.h queue.h poll.h \
-	watched_fd.h stream.h socket.h echo_server.h http-parser/http_parser.h \
-	http_reader.h http_status.h http_writer.h http_server.h \
-	skinny-mutex/skinny_mutex.h
+# Header files under include
+HDRS=include/http-parser/http_parser.h include/skinny-mutex/skinny_mutex.h \
+	$(addprefix include/molerat/,base.h buffer.h thread.h tasklet.h \
+		application.h queue.h watched_fd.h stream.h socket.h \
+		echo_server.h http_reader.h http_status.h http_writer.h \
+		http_server.h) src/poll.h
 
 # Main exectuables that get built
 EXECUTABLES=echo_server http_status_gen http_server http_client
@@ -48,16 +49,19 @@ SRCDIRS=src src/skinny-mutex src/http-parser test
 # These HDROBJS definitions say which object files correspond to which
 # headers.  I.e., if the header file is included, then the give object
 # files should be linked in.
-HDROBJS_$(ROOT)src/stream.h=
+HDROBJS_$(ROOT)include/molerat/stream.h=
 HDROBJS_$(ROOT)src/poll.h=src/poll_common.o
 
 ifdef USE_EPOLL
-HDROBJS_$(ROOT)src/watched_fd.h=src/poll_epoll.o
-HDROBJS_$(ROOT)src/timer.h=src/poll_epoll.o
+HDROBJS_$(ROOT)include/molerat/watched_fd.h=src/poll_epoll.o
+HDROBJS_$(ROOT)include/molerat/timer.h=src/poll_epoll.o
 else
-HDROBJS_$(ROOT)src/watched_fd.h=src/poll_poll.o
-HDROBJS_$(ROOT)src/timer.h=src/poll_poll.o
+HDROBJS_$(ROOT)include/molerat/watched_fd.h=src/poll_poll.o
+HDROBJS_$(ROOT)include/molerat/timer.h=src/poll_poll.o
 endif
+
+HDROBJS_$(ROOT)include/http-parser/http_parser.h=src/http-parser/http_parser.o
+HDROBJS_$(ROOT)include/skinny-mutex/skinny_mutex.h=src/skinny-mutex/skinny_mutex.o
 
 # This MAINOBJ definitions say which is the main object file of the
 # given exectuable, in cases where the names don't match directly.
@@ -68,8 +72,8 @@ MAINOBJ_http_server=src/http_server_main.o
 # Now for the magic.
 
 ALL_EXECUTABLES:=$(EXECUTABLES) $(TEST_EXECUTABLES)
-ALL_SRCS:=$(foreach S,$(SRCS),src/$(S)) $(foreach S,$(TEST_SRCS),test/$(S))
-$(foreach H,$(HDRS),$(eval HDROBJS_$(ROOT)src/$(H)?=src/$(H:%.h=%.o)))
+ALL_SRCS:=$(addprefix src/,$(SRCS)) $(addprefix test/,$(TEST_SRCS))
+$(foreach H,$(HDRS),$(eval HDROBJS_$(ROOT)$(H)?=src/$(notdir $(H:%.h=%.o))))
 
 # Disable builtin rules
 .SUFFIXES:

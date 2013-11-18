@@ -1,7 +1,7 @@
 #ifndef MOLERAT_HTTP_WRITER_H
 #define MOLERAT_HTTP_WRITER_H
 
-#include "buffer.h"
+#include <molerat/buffer.h>
 
 struct stream;
 struct tasklet;

@@ -1,10 +1,10 @@
 #include <stdio.h>
 
-#include "base.h"
-#include "socket.h"
-#include "tasklet.h"
-#include "application.h"
-#include "echo_server.h"
+#include <molerat/base.h>
+#include <molerat/socket.h>
+#include <molerat/tasklet.h>
+#include <molerat/application.h>
+#include <molerat/echo_server.h>
 
 int main(int argc, char **argv)
 {

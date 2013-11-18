@@ -3,9 +3,9 @@
 
 #include <signal.h>
 
-#include "thread.h"
-#include "watched_fd.h"
-#include "timer.h"
+#include <molerat/thread.h>
+#include <molerat/watched_fd.h>
+#include <molerat/timer.h>
 
 /* Stuff common to all poll implementations */
 

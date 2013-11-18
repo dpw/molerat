@@ -1,5 +1,5 @@
-#include "timer.h"
-#include "application.h"
+#include <molerat/timer.h>
+#include <molerat/application.h>
 
 #define TIMER_COUNT 100
 

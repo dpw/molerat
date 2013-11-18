@@ -1,8 +1,8 @@
 #ifndef MOLERAT_QUEUE_H
 #define MOLERAT_QUEUE_H
 
-#include "base.h"
-#include "tasklet.h"
+#include <molerat/base.h>
+#include <molerat/tasklet.h>
 
 enum queue_waiters_state { NEITHER, WAS_FULL, WAS_EMPTY };
 

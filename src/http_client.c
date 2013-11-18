@@ -1,10 +1,10 @@
 #include <stdio.h>
 
-#include "socket.h"
-#include "tasklet.h"
-#include "application.h"
-#include "http_reader.h"
-#include "http_writer.h"
+#include <molerat/socket.h>
+#include <molerat/tasklet.h>
+#include <molerat/application.h>
+#include <molerat/http_reader.h>
+#include <molerat/http_writer.h>
 
 struct http_client {
 	struct mutex mutex;

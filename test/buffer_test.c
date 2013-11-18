@@ -1,7 +1,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "buffer.h"
+#include <molerat/buffer.h>
 
 static bool_t drainbuf_check(struct drainbuf *buf, char *s)
 {

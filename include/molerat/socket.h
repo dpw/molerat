@@ -1,8 +1,8 @@
 #ifndef MOLERAT_SOCKET_H
 #define MOLERAT_SOCKET_H
 
-#include "base.h"
-#include "stream.h"
+#include <molerat/base.h>
+#include <molerat/stream.h>
 
 struct sockaddr;
 

@@ -9,9 +9,9 @@
 #include <arpa/inet.h>
 #include <signal.h>
 
-#include "socket.h"
-#include "tasklet.h"
-#include "watched_fd.h"
+#include <molerat/socket.h>
+#include <molerat/tasklet.h>
+#include <molerat/watched_fd.h>
 
 static int would_block(void)
 {

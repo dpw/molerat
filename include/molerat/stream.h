@@ -1,7 +1,7 @@
 #ifndef MOLERAT_STREAM_H
 #define MOLERAT_STREAM_H
 
-#include "base.h"
+#include <molerat/base.h>
 
 struct tasklet;
 

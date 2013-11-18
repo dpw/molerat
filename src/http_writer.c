@@ -1,8 +1,8 @@
 #include <stdarg.h>
 
-#include "http_writer.h"
-#include "http_status.h"
-#include "stream.h"
+#include <molerat/http_writer.h>
+#include <molerat/http_status.h>
+#include <molerat/stream.h>
 
 void http_writer_init(struct http_writer *w, struct stream *stream)
 {

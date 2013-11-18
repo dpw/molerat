@@ -1,7 +1,7 @@
 #include <string.h>
 
-#include "http_reader.h"
-#include "stream.h"
+#include <molerat/http_reader.h>
+#include <molerat/stream.h>
 
 static int on_url(struct http_parser *hp, const char *at, size_t len);
 static int on_url_cont(struct http_parser *hp, const char *at, size_t len);

@@ -1,13 +1,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "socket.h"
-#include "tasklet.h"
-#include "timer.h"
+#include <molerat/socket.h>
+#include <molerat/tasklet.h>
+#include <molerat/timer.h>
 
-#include "http_server.h"
-#include "http_reader.h"
-#include "http_writer.h"
+#include <molerat/http_server.h>
+#include <molerat/http_reader.h>
+#include <molerat/http_writer.h>
 
 struct http_server {
 	struct mutex mutex;

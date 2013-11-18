@@ -1,9 +1,9 @@
 #include <signal.h>
 #include <assert.h>
 
-#include "base.h"
-#include "thread.h"
-#include "application.h"
+#include <molerat/base.h>
+#include <molerat/thread.h>
+#include <molerat/application.h>
 
 static struct mutex app_mutex = MUTEX_INITIALIZER;
 static int app_running;

@@ -1,8 +1,8 @@
 #ifndef MOLERAT_TASKLET_H
 #define MOLERAT_TASKLET_H
 
-#include "base.h"
-#include "thread.h"
+#include <molerat/base.h>
+#include <molerat/thread.h>
 
 struct tasklet {
 	struct mutex *mutex;

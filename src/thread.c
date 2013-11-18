@@ -2,7 +2,7 @@
 #include <string.h>
 #include <signal.h>
 
-#include "thread.h"
+#include <molerat/thread.h>
 
 struct thread_params {
 	void (*func)(void *data);

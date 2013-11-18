@@ -1,7 +1,8 @@
-#include "base.h"
+#include <molerat/base.h>
+#include <molerat/tasklet.h>
+#include <molerat/application.h>
+
 #include "poll.h"
-#include "tasklet.h"
-#include "application.h"
 
 static struct poll *singleton;
 

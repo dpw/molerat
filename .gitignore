@@ -12,5 +12,5 @@ timer_test
 echo_server
 http_server
 http_client
-http_status.c
+src/http_status.c
 http_status_gen

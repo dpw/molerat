@@ -1,0 +1,56 @@
+# Molerat
+
+Molerat is a framework for writing scalable network server programs in
+C.  It's still at the experimental stage: It works, but a lot of
+elaboration is needed before it is ready for general use.
+
+## Why might it be interesting?
+
+Molerat combines an event-driven approach with multithreading support,
+so applications can support large numbers of connections while easily
+exploiting all the resources of multicore machines.
+
+Molerat facilitates this with *tasklets*.
+
+A tasklet is a sequential context of execution.  Like a thread, a
+tasklet can wait for events (such as data arriving on a socket).
+Unlike a thread, a tasklet does not have its own stack, so tasklet
+code has to be follow certain idioms.  But those idioms are less
+cumbersome than trying to write callback-based code in C, particularly
+in a multithreaded context.
+
+Tasklets are very lightweight; millions of tasklets could fit in the
+memory of a modern machine.  Molerat schedules runnable tasklets onto
+a much smaller number of threads.
+
+## How can I play with Molerat?
+
+Molerat currently builds only on Linux.  There is nothing
+fundamentally Linux-specific about it, but no work has been done to
+port it to other platforms so far.
+
+There are no dependencies or prerequisites except for gcc and make, so
+after cloning the repo do:
+
+    $ git submodule update --init
+    $ make
+
+The only demo application so far is a rudimentary HTTP server and
+client.
+
+Run the HTTP server with the port number to listen on:
+
+    $ ./http_server 5555
+
+And then point your browser at <http://localhost:5555>.  The server
+simply spits out a canned HTML page.
+
+Or you can use the HTTP client:
+
+    $ ./http_client localhost 5555
+
+There are also a bunch of self-contained test programs which exercise
+various parts of the framework.
+
+If you are still reading and interested, you should probably poke me
+for more documentation etc.

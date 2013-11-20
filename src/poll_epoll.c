@@ -7,7 +7,7 @@
    bitsets looks cumbersome, but compiles down to the simple bitwise
    instructions you would expect. */
 
-#define ASSERT_SINGLE_BIT(bit) typedef char assert_single_bit_##bit[!((bit)&((bit)-1))*2-1]
+#define ASSERT_SINGLE_BIT(bit) STATIC_ASSERT(!((bit) & ((bit) - 1)))
 #define TRANSLATE_BIT(val, from, to) ((unsigned int)(from) > (unsigned int)(to) ? ((val) & (from)) / ((from) / (to)) : ((val) & (from)) * ((to) / (from)))
 
 /* Translate an event set to the system representation */

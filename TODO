@@ -1,12 +1,27 @@
+Special readstream and writestream things.  Sockets have these.
+Stream utils for a stream on a file, comparing streams, etc.  Use
+these for http-reader and writer tests.
+
+Propagate syscall errors from poll_epoll
+
+optimize growbuf_reserve
+
+writer should have special content-length support, and know when to
+emit content-close (uhmmm, always).  For HTTP/1.0 reqs, always need a
+content-length when writing a body.  For HTTP/1.1 reqs, can do chunked
+with no-content-length.
+
+comments on http_writer
+
+writev response
+
+speak http/1.0 (i.e. to support ab)
+
 allow thread debuggging bits to be compiled out
 
 can use timerfds for timers
 
 show tasklet handler in run_queue_run asserts
-
-Propagate syscall errors from poll_epoll
-
-http_writer
 
 make http server serve files
 
@@ -16,8 +31,6 @@ URL parsing
 
 Check mutex ownership on tasklet exit?
 Refine thread.c lock held checking (use thread id)
-
-tasklet_now -> tasklet_goto
 
 thread API probably better pointer-based
 

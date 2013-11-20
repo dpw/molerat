@@ -354,29 +354,15 @@ static ssize_t simple_socket_write(struct stream *gs, const void *buf,
 }
 
 static bool_t simple_socket_partial_close(struct socket *gs,
-					  bool_t writes, bool_t reads,
+					  bool_t read_else_write,
 					  struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
-	int how;
 	bool_t res = TRUE;
-
-	if (writes) {
-		if (!reads)
-			how = SHUT_WR;
-		else
-			how = SHUT_RDWR;
-	}
-	else {
-		if (!reads)
-			return TRUE;
-
-		how = SHUT_RD;
-	}
 
 	mutex_lock(&s->mutex);
 
-	if (shutdown(s->fd, how) < 0) {
+	if (shutdown(s->fd, read_else_write ? SHUT_RD : SHUT_WR) < 0) {
 		error_errno(e, "shutdown");
 		res = FALSE;
 	}

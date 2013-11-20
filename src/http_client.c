@@ -63,7 +63,7 @@ static void write_request(void *v_c)
 		goto out;
 
 	case HTTP_WRITER_END_DONE:
-		if (!socket_partial_close(c->socket, 1, 0, &c->err))
+		if (!socket_close_write(c->socket, &c->err))
 			goto error;
 
 		tasklet_goto(&c->tasklet, read_response_prebody);

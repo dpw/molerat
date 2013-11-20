@@ -40,7 +40,7 @@ void tester_write(void *v_t)
 
 	for (;;) {
 		if (t->write_pos == t->write_len) {
-			socket_partial_close(t->socket, 1, 0, &t->write_err);
+			socket_close_write(t->socket, &t->write_err);
 			break;
 		}
 

@@ -169,12 +169,16 @@ void watched_fd_destroy(struct watched_fd *w)
 	mutex_unlock(&p->common.mutex);
 }
 
-void watched_fd_set_interest(struct watched_fd *w, poll_events_t interest)
+bool_t watched_fd_set_interest(struct watched_fd *w, poll_events_t interest,
+			       struct error *err)
 {
+	(void)err;
+
 	mutex_lock(&w->poll->common.mutex);
 	w->interest |= interest;
 	updated(w);
 	mutex_unlock(&w->poll->common.mutex);
+	return TRUE;
 }
 
 void watched_fd_set_handler(struct watched_fd *w, watched_fd_handler_t handler,

@@ -303,7 +303,10 @@ static ssize_t simple_socket_read(struct stream *gs, void *buf, size_t len,
 
 		if (would_block()) {
 			wait_list_wait(&s->reading, t);
-			watched_fd_set_interest(s->watched_fd, WATCHED_FD_IN);
+			if (!watched_fd_set_interest(s->watched_fd,
+						     WATCHED_FD_IN, e))
+				goto error;
+
 			res = STREAM_WAITING;
 			goto out;
 		}
@@ -314,6 +317,7 @@ static ssize_t simple_socket_read(struct stream *gs, void *buf, size_t len,
 		error_set(e, ERROR_INVALID, "socket_read: closed socket");
 	}
 
+ error:
 	res = STREAM_ERROR;
  out:
 	mutex_unlock(&s->mutex);
@@ -337,7 +341,10 @@ static ssize_t simple_socket_write(struct stream *gs, const void *buf,
 
                if (would_block()) {
                        wait_list_wait(&s->writing, t);
-                       watched_fd_set_interest(s->watched_fd, WATCHED_FD_OUT);
+			if (!watched_fd_set_interest(s->watched_fd,
+						     WATCHED_FD_OUT, e))
+				goto error;
+
                        res = STREAM_WAITING;
                        goto out;
                }
@@ -348,6 +355,8 @@ static ssize_t simple_socket_write(struct stream *gs, const void *buf,
                error_set(e, ERROR_INVALID, "socket_write: closed socket");
        }
 
+ error:
+       res = STREAM_ERROR;
  out:
        mutex_unlock(&s->mutex);
        return res;
@@ -465,13 +474,8 @@ static void start_connecting(struct connector *c)
 {
 	for (;;) {
 		struct addrinfo *ai = c->next_addrinfo;
-		if (!ai) {
-			/* Ran out of addresses to try, so we are done. We
-			   should have an error to report. */
-			assert(!error_ok(&c->err));
-			simple_socket_wake_all(&c->socket->base);
-			return;
-		}
+		if (!ai)
+			break;
 
 		/* If we have an existing connecting socket, dispose of it. */
 		connector_close(c);
@@ -493,13 +497,22 @@ static void start_connecting(struct connector *c)
 		else if (would_block()) {
 			/* Writeability will indicate that the connection has
 			 * been established. */
-			watched_fd_set_interest(c->watched_fd, WATCHED_FD_OUT);
+			if (!watched_fd_set_interest(c->watched_fd,
+						     WATCHED_FD_OUT, &c->err))
+				/* Give up and propagate the error */
+				break;
+
 			return;
 		}
 		else {
 			error_errno(&c->err, "connect");
 		}
 	}
+
+	/* Ran out of addresses to try, so we are done. We should have
+	   an error to report. */
+	assert(!error_ok(&c->err));
+	simple_socket_wake_all(&c->socket->base);
 }
 
 static void finish_connecting(void *v_c)
@@ -542,10 +555,10 @@ static void finish_connecting(void *v_c)
 				error_errno_val(&c->err, e, syscall);
 				start_connecting(c);
 			}
-			else {
-				/* Stange, no error.  Continue to poll. */
-				watched_fd_set_interest(c->watched_fd,
-							WATCHED_FD_OUT);
+			/* Strange, no error.  Continue to poll. */
+			else if (!watched_fd_set_interest(c->watched_fd,
+						  WATCHED_FD_OUT, &c->err)) {
+				simple_socket_wake_all(&c->socket->base);
 			}
 		}
 	}
@@ -806,8 +819,9 @@ static struct socket *simple_server_socket_accept(struct server_socket *gs,
 
 		/* No sockets ready, so wait. */
 		for (i = 0; i < s->n_fds; i++)
-			watched_fd_set_interest(s->fds[i].watched_fd,
-						WATCHED_FD_IN);
+			if (!watched_fd_set_interest(s->fds[i].watched_fd,
+						     WATCHED_FD_IN, e))
+				goto out;
 	} while (wait_list_down(&s->accepting, 1, t));
 
  out:

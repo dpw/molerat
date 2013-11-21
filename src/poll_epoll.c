@@ -113,7 +113,8 @@ struct watched_fd *watched_fd_create(int fd, watched_fd_handler_t handler,
 	return w;
 }
 
-void watched_fd_set_interest(struct watched_fd *w, poll_events_t interest)
+bool_t watched_fd_set_interest(struct watched_fd *w, poll_events_t interest,
+			       struct error *err)
 {
 	int op = EPOLL_CTL_ADD;
 	struct epoll_event ee;
@@ -129,16 +130,22 @@ void watched_fd_set_interest(struct watched_fd *w, poll_events_t interest)
 		but redundant events are not likely to be much of a
 		problem. */
 		if (w->interest == interest)
-			return;
+			return TRUE;
 
 		op = EPOLL_CTL_MOD;
 	}
 
 	ee.events = events_to_system(interest) | EPOLLET;
 	ee.data.ptr = w;
-	check_syscall("epoll_ctl", !epoll_ctl(w->poll->epfd, op, w->fd, &ee));
+
+	if (unlikely(epoll_ctl(w->poll->epfd, op, w->fd, &ee))) {
+		error_errno(err, "epoll_ctl");
+		return FALSE;
+	}
+
 	w->added = TRUE;
 	w->interest = interest;
+	return TRUE;
 }
 
 void watched_fd_set_handler(struct watched_fd *w, watched_fd_handler_t handler,

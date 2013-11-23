@@ -1,6 +1,7 @@
 #ifndef MOLERAT_BASE_H
 #define MOLERAT_BASE_H
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -16,7 +17,7 @@ typedef unsigned char bool_t;
 #define STATIC_ASSERT(e) ((void)sizeof(char[1-2*!(e)*2]))
 
 #define container_of(ptr, type, member) \
-	({ const typeof(((type *)0)->member ) *__mptr = (ptr); \
+	({ const __typeof__(((type *)0)->member ) *__mptr = (ptr); \
 	   ((type *)((char *)__mptr - offsetof(type,member))); })
 
 #define likely(x) __builtin_expect(!!(x), 1)

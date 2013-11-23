@@ -28,14 +28,15 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 	http_client.c skinny-mutex/skinny_mutex.c
 
 # Test source files under test/
-TEST_SRCS=buffer_test.c tasklet_test.c queue_test.c socket_test.c timer_test.c
+TEST_SRCS=buffer_test.c tasklet_test.c queue_test.c socket_test.c timer_test.c \
+	stream_utils.c
 
 # Header files under include
 HDRS=include/http-parser/http_parser.h include/skinny-mutex/skinny_mutex.h \
 	$(addprefix include/molerat/,base.h buffer.h thread.h tasklet.h \
 		application.h queue.h watched_fd.h stream.h socket.h \
 		echo_server.h http_reader.h http_status.h http_writer.h \
-		http_server.h) src/poll.h
+		http_server.h) src/poll.h test/stream_utils.h
 
 # Main exectuables that get built
 EXECUTABLES=echo_server http_status_gen http_server http_client

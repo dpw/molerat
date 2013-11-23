@@ -298,24 +298,19 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 		return STREAM_END;
 	}
 
+	/* Zero length means end-of-data for http-parser. */
+	if (unlikely(len == 0))
+		return 0;
+
+	/* r->body_end records the current end of the body data within
+	   buf */
 	r->body_end = buf;
 
 	/* First we need to handle any body data that might be sitting
 	   in the prebody buffer. */
 	for (;;) {
-		size_t prebody_left;
-
-		/* How much space is left in the result buffer?  We
-		   can't parse more than this, otherwise we risk
-		   overrunning the buffer (http-parser doesn't allow
-		   callbacks to accept partial data). */
-		len = buf_end - r->body_end;
-		if (!len)
-			/* Result buffer is full */
-			return buf_end - buf;
-
 		/* How much data is left in the prebody buffer */
-		 prebody_left = growbuf_length(&r->prebody) - r->parsed;
+		size_t prebody_left = growbuf_length(&r->prebody) - r->parsed;
 		if (!prebody_left)
 			/* Nothing in the prebody buffer, so read from
 			   the stream. */
@@ -334,13 +329,25 @@ ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 			/* We have reached the end of the body */
 			assert(r->state == HTTP_READER_EOM);
 			http_parser_pause(&r->parser, 0);
-			goto done;
+			if (r->body_end == buf)
+				return STREAM_END;
+			else
+				goto done;
 
 		default:
 			/* Error */
 			set_error_from_parser(r, err);
 			return -1;
 		}
+
+		/* How much space is left in the result buffer?  We
+		   can't parse more than this, otherwise we risk
+		   overrunning the buffer (http-parser doesn't allow
+		   callbacks to accept partial data). */
+		len = buf_end - r->body_end;
+		if (!len)
+			/* Result buffer is full */
+			goto done;
 	}
 
 	buf_pos = r->body_end;

@@ -29,7 +29,7 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 
 # Test source files under test/
 TEST_SRCS=buffer_test.c tasklet_test.c queue_test.c socket_test.c timer_test.c \
-	stream_utils.c
+	stream_utils.c http_reader_test.c
 
 # Header files under include
 HDRS=include/http-parser/http_parser.h include/skinny-mutex/skinny_mutex.h \
@@ -42,7 +42,8 @@ HDRS=include/http-parser/http_parser.h include/skinny-mutex/skinny_mutex.h \
 EXECUTABLES=echo_server http_status_gen http_server http_client
 
 # Test executables that get built
-TEST_EXECUTABLES=buffer_test tasklet_test queue_test socket_test timer_test
+TEST_EXECUTABLES=buffer_test tasklet_test queue_test socket_test timer_test \
+	http_reader_test
 
 # All source directories
 SRCDIRS=src src/skinny-mutex src/http-parser test
@@ -52,6 +53,7 @@ SRCDIRS=src src/skinny-mutex src/http-parser test
 # files should be linked in.
 HDROBJS_$(ROOT)include/molerat/stream.h=
 HDROBJS_$(ROOT)src/poll.h=src/poll_common.o
+HDROBJS_$(ROOT)test/stream_utils.h=test/stream_utils.o
 
 ifdef USE_EPOLL
 HDROBJS_$(ROOT)include/molerat/watched_fd.h=src/poll_epoll.o

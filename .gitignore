@@ -14,3 +14,4 @@ http_server
 http_client
 src/http_status.c
 http_status_gen
+http_reader_test

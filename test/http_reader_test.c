@@ -64,18 +64,13 @@ const char test_data[] =
 	"User-Agent: UA2\r\n"
 	"\r\n";
 
-int main(void)
+static void check_http_reader(struct stream *s)
 {
-	struct drainbuf buf;
-	struct stream *stream;
 	struct http_reader reader;
 	struct error err;
 	char c[1];
 
-	drainbuf_set(&buf, test_data, strlen(test_data));
-	stream = drainbuf_read_stream_create(&buf);
-
-	http_reader_init(&reader, stream, TRUE);
+	http_reader_init(&reader, s, TRUE);
 
 	assert(http_reader_prebody(&reader, NULL, &err)
 	                                        == HTTP_READER_PREBODY_DONE);
@@ -92,7 +87,20 @@ int main(void)
 	                                        == HTTP_READER_PREBODY_CLOSED);
 
 	http_reader_fini(&reader);
-	stream_destroy(stream);
+	stream_destroy(s);
+
+}
+
+int main(void)
+{
+	struct drainbuf buf;
+
+	drainbuf_set(&buf, test_data, strlen(test_data));
+	check_http_reader(drainbuf_read_stream_create(&buf));
+
+	drainbuf_set(&buf, test_data, strlen(test_data));
+	check_http_reader(byte_at_a_time_stream_create(
+					   drainbuf_read_stream_create(&buf)));
 
 	return 0;
 }

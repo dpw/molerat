@@ -101,7 +101,7 @@ endif
 
 .PHONY: clean
 clean::
-	rm -f $(foreach D,$(SRCDIRS),$(D)/*.o $(call dotify,$(D)/*.dep) $(D)/*~ $(D)/*.gcov $(D)/*.gcda $(D)/*.gcno) $(ALL_EXECUTABLES) src/http_status.c
+	rm -f $(foreach D,$(SRCDIRS),$(D)/*.o $(call dotify,$(D)/*.dep) $(D)/*~ $(D)/*.gcda $(D)/*.gcno) $(ALL_EXECUTABLES) src/http_status.c coverage/*.gcov
 
 src/http_status.c: http_status_gen
 	$(<D)/$< >$@ || rm -f $@
@@ -141,4 +141,6 @@ coverage:
 	$(MAKE) -f $(MAKEFILE) clean
 	$(MAKE) -f $(MAKEFILE) all CFLAGS="$(CFLAGS) --coverage"
 	$(foreach T,$(TEST_EXECUTABLES),./$(T) &&) :
-	$(foreach D,$(sort $(foreach S,$(ALL_SRCS),$(dir $(S)))),(cd $(D) && gcov $(strip $(foreach S,$(ALL_SRCS),$(and $(filter $(D),$(dir $(S))),$(notdir $(S)))))) &&) :
+	mkdir -p coverage
+	gcov -p $(ALL_SRCS)
+	mv *.gcov coverage

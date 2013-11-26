@@ -43,7 +43,7 @@ void growbuf_init(struct growbuf *growbuf, size_t capacity);
 void growbuf_fini(struct growbuf *growbuf);
 void growbuf_reset(struct growbuf *growbuf);
 void growbuf_to_drainbuf(struct growbuf *growbuf, struct drainbuf *drainbuf);
-void *growbuf_reserve(struct growbuf *growbuf, size_t need);
+void *growbuf_grow(struct growbuf *growbuf, size_t need);
 void growbuf_shift(struct growbuf *growbuf, size_t pos);
 void growbuf_append(struct growbuf *growbuf, const void *data, size_t len);
 void growbuf_append_string(struct growbuf *growbuf, const char *s);
@@ -74,6 +74,16 @@ static inline size_t growbuf_space(const struct growbuf *growbuf)
 {
 	assert(!growbuf_frozen(growbuf));
 	return growbuf->limit - growbuf->end;
+}
+
+static inline void *growbuf_reserve(struct growbuf *growbuf, size_t need)
+{
+	assert(!growbuf_frozen(growbuf));
+
+	if (need <= (size_t)(growbuf->limit - growbuf->end))
+		return growbuf->end;
+	else
+		return growbuf_grow(growbuf, need);
 }
 
 static inline void growbuf_advance(struct growbuf *growbuf, size_t len)

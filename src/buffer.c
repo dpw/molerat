@@ -48,24 +48,18 @@ void growbuf_shift(struct growbuf *growbuf, size_t pos)
 	growbuf->end -= pos;
 }
 
-void *growbuf_reserve(struct growbuf *growbuf, size_t need)
+void *growbuf_grow(struct growbuf *growbuf, size_t need)
 {
-	assert(!growbuf_frozen(growbuf));
-	assert(growbuf->limit - growbuf->end >= 0);
+	size_t capacity = growbuf->limit - growbuf->start;
+	size_t used = growbuf->end - growbuf->start;
 
-	if (need > (size_t)(growbuf->limit - growbuf->end)) {
-		size_t capacity = growbuf->limit - growbuf->start;
-		size_t used = growbuf->end - growbuf->start;
+	do
+		capacity *= 2;
+	while (capacity - used < need);
 
-		do
-			capacity *= 2;
-		while (capacity - used < need);
-
-		growbuf->start = xrealloc(growbuf->start, capacity);
-		growbuf->limit = growbuf->start + capacity;
-		growbuf->end = growbuf->start + used;
-	}
-
+	growbuf->start = xrealloc(growbuf->start, capacity);
+	growbuf->limit = growbuf->start + capacity;
+	growbuf->end = growbuf->start + used;
 	return growbuf->end;
 }
 
@@ -80,7 +74,7 @@ void growbuf_append_string(struct growbuf *growbuf, const char *s)
 	growbuf_append(growbuf, s, strlen(s));
 }
 
-static void grow(struct growbuf *growbuf)
+static void double_capacity(struct growbuf *growbuf)
 {
 	size_t used = growbuf->end - growbuf->start;
 	size_t capacity = (growbuf->limit - growbuf->start) * 2;
@@ -113,7 +107,7 @@ void growbuf_vprintf(struct growbuf *growbuf, const char *fmt, va_list ap)
 			break;
 		}
 
-		grow(growbuf);
+		double_capacity(growbuf);
 	}
 }
 

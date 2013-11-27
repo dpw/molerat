@@ -206,6 +206,7 @@ static void add_pollfd(struct pollfds *pollfds, struct watched_fd *w)
 
 	pollfds->pollfds[slot].fd = w->fd;
 	pollfds->pollfds[slot].events = events_to_system(w->interest);
+	pollfds->pollfds[slot].revents = 0;
 	pollfds->watched_fds[slot] = w;
 	w->slot = slot;
 }
@@ -232,6 +233,7 @@ void poll_prepare(struct poll *p)
 	struct watched_fd *head = p->updates;
 	struct watched_fd *w, *next;
 
+	p->poll_result = 0;
 	if (!head)
 		return;
 
@@ -281,6 +283,7 @@ void poll_dispatch(struct poll *p)
 {
 	struct pollfds *pollfds = &p->pollfds;
 	size_t i;
+	poll_events_t got;
 
 	if (!p->poll_result)
 		/* Poll timed out, revents fields were not set. */
@@ -297,8 +300,11 @@ void poll_dispatch(struct poll *p)
 			continue;
 		}
 
-		w->handler(w->data, events_from_system(pollfd->revents));
-		w->interest = 0;
-		remove_pollfd(pollfds, i);
+
+		got = events_from_system(pollfd->revents);
+		w->interest &= ~got;
+		w->handler(w->data, got);
+		if (w->interest == 0)
+			remove_pollfd(pollfds, i);
 	}
 }

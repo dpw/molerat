@@ -59,30 +59,71 @@ const char test_data[] =
 	"Host: foo.example.com\r\n"
 	"User-Agent: UA1\r\n"
 	"\r\n"
-	"GET / HTTP/1.1\r\n"
+
+	"POST / HTTP/1.1\r\n"
 	"Host: bar.example.com\r\n"
 	"User-Agent: UA2\r\n"
+	"Transfer-Encoding: chunked\r\n"
+	"\r\n"
+	"7\r\n"
+	"hello, \r\n"
+	"6\r\n"
+	"world!\r\n"
+	"0\r\n"
+	"\r\n"
+
+	"GET / HTTP/1.1\r\n"
+	"Host: baz.example.com\r\n"
+	"User-Agent: UA3\r\n"
 	"\r\n";
+
+static size_t read_full_body(struct http_reader *r, char *buf, size_t len,
+			     struct error *err)
+{
+	size_t got = 0;
+
+	for (;;) {
+		ssize_t res = http_reader_body(r, buf, len, NULL, err);
+		if (res == STREAM_END)
+			return got;
+
+		assert(res >= 0);
+		buf += res;
+		len -= res;
+		got += res;
+	}
+}
 
 static void check_http_reader(struct stream *s)
 {
 	struct http_reader reader;
 	struct error err;
-	char c[1];
+	char buf[14];
 
 	http_reader_init(&reader, s, TRUE);
 
+	/* First request */
 	assert(http_reader_prebody(&reader, NULL, &err)
 	                                        == HTTP_READER_PREBODY_DONE);
 	check_headers(&reader, 2, "<Host>=<foo.example.com>,<User-Agent>=<UA1>");
-	assert(http_reader_body(&reader, c, 0, NULL, &err) == 0);
-	assert(http_reader_body(&reader, c, 1, NULL, &err) == STREAM_END);
+	assert(http_reader_body(&reader, buf, 0, NULL, &err) == 0);
+	assert(http_reader_body(&reader, buf, 1, NULL, &err) == STREAM_END);
 
+	/* Second request */
 	assert(http_reader_prebody(&reader, NULL, &err)
 	                                        == HTTP_READER_PREBODY_DONE);
-	check_headers(&reader, 2, "<Host>=<bar.example.com>,<User-Agent>=<UA2>");
-	assert(http_reader_body(&reader, c, 1, NULL, &err) == STREAM_END);
+	check_headers(&reader, 3, "<Host>=<bar.example.com>,<Transfer-Encoding>=<chunked>,<User-Agent>=<UA2>");
+	assert(read_full_body(&reader, buf, 14, &err) == 13);
+	assert(!memcmp(buf, "hello, world!", 13));
+	assert(http_reader_body(&reader, buf, 1, NULL, &err) == STREAM_END);
 
+	/* Third request */
+	assert(http_reader_prebody(&reader, NULL, &err)
+	                                        == HTTP_READER_PREBODY_DONE);
+	check_headers(&reader, 2, "<Host>=<baz.example.com>,<User-Agent>=<UA3>");
+	assert(http_reader_body(&reader, buf, 1, NULL, &err) == STREAM_END);
+
+	/* End of stream */
 	assert(http_reader_prebody(&reader, NULL, &err)
 	                                        == HTTP_READER_PREBODY_CLOSED);
 

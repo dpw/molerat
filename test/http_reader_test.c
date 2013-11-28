@@ -55,12 +55,12 @@ static void check_headers(struct http_reader *r, int count, const char *expect)
 }
 
 static const char test_data[] =
-	"GET / HTTP/1.1\r\n"
+	"GET /req1 HTTP/1.1\r\n"
 	"Host: foo.example.com\r\n"
 	"User-Agent: UA1\r\n"
 	"\r\n"
 
-	"POST / HTTP/1.1\r\n"
+	"POST /req2 HTTP/1.1\r\n"
 	"Host: bar.example.com\r\n"
 	"User-Agent: UA2\r\n"
 	"Transfer-Encoding: chunked\r\n"
@@ -72,7 +72,7 @@ static const char test_data[] =
 	"0\r\n"
 	"\r\n"
 
-	"GET / HTTP/1.1\r\n"
+	"GET /req3 HTTP/1.1\r\n"
 	"Host: baz.example.com\r\n"
 	"User-Agent: UA3\r\n"
 	"Continuated-Header: foo\r\n"
@@ -107,6 +107,8 @@ static void check_http_reader(struct stream *s)
 	/* First request */
 	assert(http_reader_prebody(&reader, NULL, &err)
 	                                        == HTTP_READER_PREBODY_DONE);
+	assert(http_reader_method(&reader) == HTTP_GET);
+	assert(bytes_compare(http_reader_url(&reader), c_string_bytes("req1")));
 	check_headers(&reader, 2, "<Host>=<foo.example.com>,<User-Agent>=<UA1>");
 	assert(http_reader_body(&reader, buf, 0, NULL, &err) == 0);
 	assert(http_reader_body(&reader, buf, 1, NULL, &err) == STREAM_END);
@@ -114,6 +116,8 @@ static void check_http_reader(struct stream *s)
 	/* Second request */
 	assert(http_reader_prebody(&reader, NULL, &err)
 	                                        == HTTP_READER_PREBODY_DONE);
+	assert(http_reader_method(&reader) == HTTP_POST);
+	assert(bytes_compare(http_reader_url(&reader), c_string_bytes("req2")));
 	check_headers(&reader, 3, "<Host>=<bar.example.com>,<Transfer-Encoding>=<chunked>,<User-Agent>=<UA2>");
 	assert(read_full_body(&reader, buf, 14, &err) == 13);
 	assert(!memcmp(buf, "hello, world!", 13));
@@ -122,6 +126,8 @@ static void check_http_reader(struct stream *s)
 	/* Third request */
 	assert(http_reader_prebody(&reader, NULL, &err)
 	                                        == HTTP_READER_PREBODY_DONE);
+	assert(http_reader_method(&reader) == HTTP_GET);
+	assert(bytes_compare(http_reader_url(&reader), c_string_bytes("req3")));
 	/* This is actually wrong, it should be "foo bar", but looks
 	   like a bug in http-parser */
 	check_headers(&reader, 3, "<Continuated-Header>=<foobar>,<Host>=<baz.example.com>,<User-Agent>=<UA3>");
@@ -138,12 +144,10 @@ static void check_http_reader(struct stream *s)
 
 int main(void)
 {
-	check_http_reader(bytes_read_stream_create(make_bytes(test_data,
-							  strlen(test_data))));
+	check_http_reader(bytes_read_stream_create(c_string_bytes(test_data)));
 
 	check_http_reader(byte_at_a_time_stream_create(
-		                 bytes_read_stream_create(make_bytes(test_data,
-							  strlen(test_data)))));
+			  bytes_read_stream_create(c_string_bytes(test_data))));
 
 	return 0;
 }

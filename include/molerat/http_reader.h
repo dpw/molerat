@@ -79,6 +79,18 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 ssize_t http_reader_body(struct http_reader *r, void *v_buf, size_t len,
 			 struct tasklet *tasklet, struct error *err);
 
+static inline enum http_method http_reader_method(struct http_reader *r)
+{
+	return r->parser.method;
+}
+
+/* Get the request URL.  Remains valid from when http_reader_prebody
+   indicates it is finished until the next call to
+   http_reaader_prebody. */
+struct bytes http_reader_url(struct http_reader *r);
+
+/* Get an iterator over the headers.  Lifetime of the header are as
+   for http_reader_url. */
 void http_reader_headers(struct http_reader *r, struct http_header_iter *iter);
 struct http_header *http_header_iter_next(struct http_header_iter *iter);
 

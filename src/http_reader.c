@@ -421,6 +421,12 @@ static int on_body(struct http_parser *hp, const char *cat, size_t len)
 	return 0;
 }
 
+struct bytes http_reader_url(struct http_reader *r)
+{
+	return make_bytes(growbuf_offset(&r->prebody, r->url),
+			  r->url_end - r->url);
+}
+
 void http_reader_headers(struct http_reader *r, struct http_header_iter *iter)
 {
 	iter->current = r->headers;

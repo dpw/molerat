@@ -31,6 +31,8 @@ static inline const char *bytes_current(struct bytes bytes)
 }
 
 void bytes_advance(struct bytes *bytes, size_t step);
+struct bytes c_string_bytes(const char *str);
+int bytes_compare(struct bytes a, struct bytes b);
 
 /* growbufs do own the underlying buffer */
 struct growbuf {

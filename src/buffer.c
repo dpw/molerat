@@ -10,6 +10,24 @@ void bytes_advance(struct bytes *bytes, size_t step)
 	bytes->pos += step;
 }
 
+struct bytes c_string_bytes(const char *str)
+{
+	return make_bytes(str, strlen(str));
+}
+
+int bytes_compare(struct bytes a, struct bytes b)
+{
+	size_t a_len = bytes_length(a);
+	size_t b_len = bytes_length(b);
+	int res = memcmp(bytes_current(a), bytes_current(b),
+			 a_len < b_len ? a_len : b_len);
+
+	if (res)
+		return res;
+	else
+		return (a_len > b_len) - (a_len < b_len);
+}
+
 void growbuf_init(struct growbuf *growbuf, size_t capacity)
 {
 	growbuf->end = growbuf->start = xalloc(capacity);

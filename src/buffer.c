@@ -6,7 +6,7 @@
 
 void bytes_advance(struct bytes *bytes, size_t step)
 {
-	assert(step <= bytes_length(bytes));
+	assert(step <= bytes_length(*bytes));
 	bytes->pos += step;
 }
 

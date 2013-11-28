@@ -7,7 +7,7 @@ static bool_t bytes_check(struct bytes *buf, char *s)
 {
 	size_t l = strlen(s);
 
-	if (memcmp(s, bytes_current(buf), l) != 0)
+	if (memcmp(s, bytes_current(*buf), l) != 0)
 		return FALSE;
 
 	bytes_advance(buf, l);
@@ -16,10 +16,8 @@ static bool_t bytes_check(struct bytes *buf, char *s)
 
 static void test_bytes(void)
 {
-	struct bytes buf;
 	char s[] = "foobar";
-
-	bytes_set(&buf, s, strlen(s));
+	struct bytes buf = make_bytes(s, strlen(s));
 	assert(bytes_check(&buf, "foo"));
 	assert(bytes_check(&buf, "bar"));
 }
@@ -30,8 +28,8 @@ static bool_t growbuf_check(struct growbuf *gbuf, char *s)
 	struct bytes dbuf;
 
 	growbuf_to_bytes(gbuf, &dbuf);
-	return l == bytes_length(&dbuf)
-		&& memcmp(s, bytes_current(&dbuf), l) == 0;
+	return l == bytes_length(dbuf)
+		&& memcmp(s, bytes_current(dbuf), l) == 0;
 }
 
 static void test_growbuf(void)

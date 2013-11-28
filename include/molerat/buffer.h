@@ -12,21 +12,22 @@ struct bytes {
 	const char *end;
 };
 
-static inline void bytes_set(struct bytes *bytes, const char *p,
-				size_t len)
+static inline struct bytes make_bytes(const char *p, size_t len)
 {
-	bytes->pos = p;
-	bytes->end = bytes->pos + len;
+	struct bytes b;
+	b.pos = p;
+	b.end = p + len;
+	return b;
 }
 
-static inline size_t bytes_length(struct bytes *bytes)
+static inline size_t bytes_length(struct bytes bytes)
 {
-	return bytes->end - bytes->pos;
+	return bytes.end - bytes.pos;
 }
 
-static inline const char *bytes_current(struct bytes *bytes)
+static inline const char *bytes_current(struct bytes bytes)
 {
-	return bytes->pos;
+	return bytes.pos;
 }
 
 void bytes_advance(struct bytes *bytes, size_t step);

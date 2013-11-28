@@ -138,14 +138,12 @@ static void check_http_reader(struct stream *s)
 
 int main(void)
 {
-	struct bytes buf;
+	check_http_reader(bytes_read_stream_create(make_bytes(test_data,
+							  strlen(test_data))));
 
-	bytes_set(&buf, test_data, strlen(test_data));
-	check_http_reader(bytes_read_stream_create(&buf));
-
-	bytes_set(&buf, test_data, strlen(test_data));
 	check_http_reader(byte_at_a_time_stream_create(
-					   bytes_read_stream_create(&buf)));
+		                 bytes_read_stream_create(make_bytes(test_data,
+							  strlen(test_data)))));
 
 	return 0;
 }

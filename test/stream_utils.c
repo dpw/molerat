@@ -24,11 +24,11 @@ struct bytes_read_stream {
 
 static struct stream_ops bytes_read_stream_ops;
 
-struct stream *bytes_read_stream_create(struct bytes *buf)
+struct stream *bytes_read_stream_create(struct bytes buf)
 {
 	struct bytes_read_stream *s = xalloc(sizeof *s);
 	s->base.ops = &bytes_read_stream_ops;
-	s->buf = *buf;
+	s->buf = buf;
 	return &s->base;
 }
 
@@ -38,7 +38,7 @@ static ssize_t bytes_read_stream_read(struct stream *gs, void *buf,
 {
 	struct bytes_read_stream *s
 		= container_of(gs, struct bytes_read_stream, base);
-	size_t buf_len = bytes_length(&s->buf);
+	size_t buf_len = bytes_length(s->buf);
 
 	(void)t;
 	(void)err;
@@ -49,7 +49,7 @@ static ssize_t bytes_read_stream_read(struct stream *gs, void *buf,
 	if (len > buf_len)
 		len = buf_len;
 
-	memcpy(buf, bytes_current(&s->buf), len);
+	memcpy(buf, bytes_current(s->buf), len);
 	bytes_advance(&s->buf, len);
 	return len;
 }

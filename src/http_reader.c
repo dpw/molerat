@@ -263,7 +263,7 @@ static int on_header_value_cont(struct http_parser *hp, const char *cat,
 	struct http_reader *r = hp->data;
 	char *at = (char *)cat;
 	header_t *header = &r->headers[r->headers_used - 1];
-	char *end = growbuf_offset(&r->prebody, header->name_end);
+	char *end = growbuf_offset(&r->prebody, header->value_end);
 
 	if (end != at)
 		memmove(end, at, len);

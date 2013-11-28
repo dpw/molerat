@@ -4,10 +4,10 @@
 
 #include <molerat/buffer.h>
 
-void drainbuf_advance(struct drainbuf *drainbuf, size_t step)
+void bytes_advance(struct bytes *bytes, size_t step)
 {
-	assert(step <= drainbuf_length(drainbuf));
-	drainbuf->pos += step;
+	assert(step <= bytes_length(bytes));
+	bytes->pos += step;
 }
 
 void growbuf_init(struct growbuf *growbuf, size_t capacity)
@@ -28,12 +28,12 @@ void growbuf_reset(struct growbuf *growbuf)
 	growbuf->frozen = FALSE;
 }
 
-void growbuf_to_drainbuf(struct growbuf *growbuf, struct drainbuf *drainbuf)
+void growbuf_to_bytes(struct growbuf *growbuf, struct bytes *bytes)
 {
 	/* Mark that the growbuf can no longer be grown */
 	growbuf->frozen = TRUE;
-	drainbuf->pos = growbuf->start;
-	drainbuf->end = growbuf->end;
+	bytes->pos = growbuf->start;
+	bytes->end = growbuf->end;
 }
 
 void growbuf_shift(struct growbuf *growbuf, size_t pos)

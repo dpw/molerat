@@ -17,28 +17,28 @@ static ssize_t read_only_stream_write(struct stream *gs, const void *buf,
 	return STREAM_ERROR;
 }
 
-struct drainbuf_read_stream {
+struct bytes_read_stream {
 	struct stream base;
-	struct drainbuf buf;
+	struct bytes buf;
 };
 
-static struct stream_ops drainbuf_read_stream_ops;
+static struct stream_ops bytes_read_stream_ops;
 
-struct stream *drainbuf_read_stream_create(struct drainbuf *buf)
+struct stream *bytes_read_stream_create(struct bytes *buf)
 {
-	struct drainbuf_read_stream *s = xalloc(sizeof *s);
-	s->base.ops = &drainbuf_read_stream_ops;
+	struct bytes_read_stream *s = xalloc(sizeof *s);
+	s->base.ops = &bytes_read_stream_ops;
 	s->buf = *buf;
 	return &s->base;
 }
 
-static ssize_t drainbuf_read_stream_read(struct stream *gs, void *buf,
+static ssize_t bytes_read_stream_read(struct stream *gs, void *buf,
 					 size_t len, struct tasklet *t,
 					 struct error *err)
 {
-	struct drainbuf_read_stream *s
-		= container_of(gs, struct drainbuf_read_stream, base);
-	size_t buf_len = drainbuf_length(&s->buf);
+	struct bytes_read_stream *s
+		= container_of(gs, struct bytes_read_stream, base);
+	size_t buf_len = bytes_length(&s->buf);
 
 	(void)t;
 	(void)err;
@@ -49,19 +49,19 @@ static ssize_t drainbuf_read_stream_read(struct stream *gs, void *buf,
 	if (len > buf_len)
 		len = buf_len;
 
-	memcpy(buf, drainbuf_current(&s->buf), len);
-	drainbuf_advance(&s->buf, len);
+	memcpy(buf, bytes_current(&s->buf), len);
+	bytes_advance(&s->buf, len);
 	return len;
 }
 
-static void drainbuf_read_stream_destroy(struct stream *gs)
+static void bytes_read_stream_destroy(struct stream *gs)
 {
-	struct drainbuf_read_stream *s
-		= container_of(gs, struct drainbuf_read_stream, base);
+	struct bytes_read_stream *s
+		= container_of(gs, struct bytes_read_stream, base);
 	free(s);
 }
 
-static bool_t drainbuf_read_stream_close(struct stream *gs, struct error *err)
+static bool_t bytes_read_stream_close(struct stream *gs, struct error *err)
 {
 	(void)gs;
 	(void)err;
@@ -69,11 +69,11 @@ static bool_t drainbuf_read_stream_close(struct stream *gs, struct error *err)
 	return TRUE;
 }
 
-static struct stream_ops drainbuf_read_stream_ops = {
-	drainbuf_read_stream_destroy,
-	drainbuf_read_stream_read,
+static struct stream_ops bytes_read_stream_ops = {
+	bytes_read_stream_destroy,
+	bytes_read_stream_read,
 	read_only_stream_write,
-	drainbuf_read_stream_close
+	bytes_read_stream_close
 };
 
 

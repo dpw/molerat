@@ -15,7 +15,7 @@ struct http_writer {
 		HTTP_WRITER_BODY
 	} state;
 	struct growbuf prebody;
-	struct drainbuf prebody_out;
+	struct bytes prebody_out;
 	struct stream *stream;
 };
 

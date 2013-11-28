@@ -6,30 +6,30 @@
 
 #include <molerat/base.h>
 
-/* drainbufs don't own the underlying buffer */
-struct drainbuf {
+/* bytess don't own the underlying buffer */
+struct bytes {
 	const char *pos;
 	const char *end;
 };
 
-static inline void drainbuf_set(struct drainbuf *drainbuf, const char *p,
+static inline void bytes_set(struct bytes *bytes, const char *p,
 				size_t len)
 {
-	drainbuf->pos = p;
-	drainbuf->end = drainbuf->pos + len;
+	bytes->pos = p;
+	bytes->end = bytes->pos + len;
 }
 
-static inline size_t drainbuf_length(struct drainbuf *drainbuf)
+static inline size_t bytes_length(struct bytes *bytes)
 {
-	return drainbuf->end - drainbuf->pos;
+	return bytes->end - bytes->pos;
 }
 
-static inline const char *drainbuf_current(struct drainbuf *drainbuf)
+static inline const char *bytes_current(struct bytes *bytes)
 {
-	return drainbuf->pos;
+	return bytes->pos;
 }
 
-void drainbuf_advance(struct drainbuf *drainbuf, size_t step);
+void bytes_advance(struct bytes *bytes, size_t step);
 
 /* growbufs do own the underlying buffer */
 struct growbuf {
@@ -42,7 +42,7 @@ struct growbuf {
 void growbuf_init(struct growbuf *growbuf, size_t capacity);
 void growbuf_fini(struct growbuf *growbuf);
 void growbuf_reset(struct growbuf *growbuf);
-void growbuf_to_drainbuf(struct growbuf *growbuf, struct drainbuf *drainbuf);
+void growbuf_to_bytes(struct growbuf *growbuf, struct bytes *bytes);
 void *growbuf_grow(struct growbuf *growbuf, size_t need);
 void growbuf_shift(struct growbuf *growbuf, size_t pos);
 void growbuf_append(struct growbuf *growbuf, const void *data, size_t len);

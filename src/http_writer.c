@@ -68,20 +68,20 @@ static ssize_t finish_prebody(struct http_writer *w,
 	switch (w->state) {
 	case HTTP_WRITER_HEADERS:
 		growbuf_append_string(&w->prebody, "\r\n");
-		growbuf_to_drainbuf(&w->prebody, &w->prebody_out);
+		growbuf_to_bytes(&w->prebody, &w->prebody_out);
 		w->state = HTTP_WRITER_PREBODY;
 		/* fall through */
 
 	case HTTP_WRITER_PREBODY: {
-		size_t len = drainbuf_length(&w->prebody_out);
+		size_t len = bytes_length(&w->prebody_out);
 		while (len) {
 			ssize_t res = stream_write(w->stream,
-					      drainbuf_current(&w->prebody_out),
+					      bytes_current(&w->prebody_out),
 					      len, t, e);
 			if (res < 0)
 				return res;
 
-			drainbuf_advance(&w->prebody_out, res);
+			bytes_advance(&w->prebody_out, res);
 			len -= res;
 		}
 

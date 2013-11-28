@@ -3,11 +3,11 @@
 
 #include <molerat/stream.h>
 
-struct drainbuf;
+struct bytes;
 
 /* These streams don't do locking and so are just for use in tests. */
 
-struct stream *drainbuf_read_stream_create(struct drainbuf *buf);
+struct stream *bytes_read_stream_create(struct bytes *buf);
 
 /* This stream reads and writes from the underlying stream a byte at a
    time. */

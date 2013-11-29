@@ -68,7 +68,7 @@ static ssize_t finish_prebody(struct http_writer *w,
 	switch (w->state) {
 	case HTTP_WRITER_HEADERS:
 		growbuf_append_string(&w->prebody, "\r\n");
-		growbuf_to_bytes(&w->prebody, &w->prebody_out);
+		w->prebody_out = growbuf_to_bytes(&w->prebody);
 		w->state = HTTP_WRITER_PREBODY;
 		/* fall through */
 

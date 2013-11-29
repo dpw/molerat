@@ -16,26 +16,19 @@ static bool_t bytes_check(struct bytes *buf, char *s)
 
 static void test_bytes(void)
 {
-	char s[] = "foobar";
-	struct bytes buf = make_bytes(s, strlen(s));
+	struct bytes buf = c_string_bytes("foobar");
 	assert(bytes_check(&buf, "foo"));
 	assert(bytes_check(&buf, "bar"));
 }
 
 static bool_t growbuf_check(struct growbuf *gbuf, char *s)
 {
-	size_t l = strlen(s);
-	struct bytes dbuf;
-
-	growbuf_to_bytes(gbuf, &dbuf);
-	return l == bytes_length(dbuf)
-		&& memcmp(s, bytes_current(dbuf), l) == 0;
+	return !bytes_compare(growbuf_to_bytes(gbuf), c_string_bytes(s));
 }
 
 static void test_growbuf(void)
 {
 	struct growbuf buf;
-	struct bytes dbuf;
 
 	growbuf_init(&buf, 2);
 	growbuf_append_string(&buf, "hello, ");
@@ -51,7 +44,7 @@ static void test_growbuf(void)
 
 	growbuf_init(&buf, 2);
 	assert(!growbuf_frozen(&buf));
-	growbuf_to_bytes(&buf, &dbuf);
+	growbuf_to_bytes(&buf);
 	assert(growbuf_frozen(&buf));
 	growbuf_fini(&buf);
 }

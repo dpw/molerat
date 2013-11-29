@@ -46,14 +46,6 @@ void growbuf_reset(struct growbuf *growbuf)
 	growbuf->frozen = FALSE;
 }
 
-void growbuf_to_bytes(struct growbuf *growbuf, struct bytes *bytes)
-{
-	/* Mark that the growbuf can no longer be grown */
-	growbuf->frozen = TRUE;
-	bytes->pos = growbuf->start;
-	bytes->end = growbuf->end;
-}
-
 void growbuf_shift(struct growbuf *growbuf, size_t pos)
 {
 	assert(!growbuf_frozen(growbuf));

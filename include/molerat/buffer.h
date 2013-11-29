@@ -45,13 +45,23 @@ struct growbuf {
 void growbuf_init(struct growbuf *growbuf, size_t capacity);
 void growbuf_fini(struct growbuf *growbuf);
 void growbuf_reset(struct growbuf *growbuf);
-void growbuf_to_bytes(struct growbuf *growbuf, struct bytes *bytes);
 void *growbuf_grow(struct growbuf *growbuf, size_t need);
 void growbuf_shift(struct growbuf *growbuf, size_t pos);
 void growbuf_append(struct growbuf *growbuf, const void *data, size_t len);
 void growbuf_append_string(struct growbuf *growbuf, const char *s);
 void growbuf_printf(struct growbuf *growbuf, const char *fmt, ...);
 void growbuf_vprintf(struct growbuf *growbuf, const char *fmt, va_list ap);
+
+static inline struct bytes growbuf_to_bytes(struct growbuf *growbuf)
+{
+	struct bytes res;
+
+	/* Mark that the growbuf can no longer be grown */
+	growbuf->frozen = TRUE;
+	res.pos = growbuf->start;
+	res.end = growbuf->end;
+	return res;
+}
 
 static inline bool_t growbuf_frozen(const struct growbuf *growbuf)
 {

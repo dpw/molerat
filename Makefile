@@ -49,7 +49,7 @@ TEST_EXECUTABLES=buffer_test tasklet_test queue_test socket_test timer_test \
 SRCDIRS=src src/skinny-mutex src/http-parser test
 
 # These HDROBJS definitions say which object files correspond to which
-# headers.  I.e., if the header file is included, then the give object
+# headers.  I.e., if the header file is included, then the given object
 # files should be linked in.
 HDROBJS_$(ROOT)include/molerat/stream.h=
 HDROBJS_$(ROOT)src/poll.h=src/poll_common.o
@@ -73,6 +73,9 @@ MAINOBJ_http_server=src/http_server_main.o
 
 # That completes the definition of the project sources and structure.
 # Now for the magic.
+
+.PHONY: -pthread
+HDROBJS_/usr/include/pthread.h=-pthread
 
 ALL_EXECUTABLES:=$(EXECUTABLES) $(TEST_EXECUTABLES)
 ALL_SRCS:=$(addprefix src/,$(SRCS)) $(addprefix test/,$(TEST_SRCS))
@@ -106,17 +109,12 @@ clean::
 src/http_status.c: http_status_gen
 	$(<D)/$< >$@ || rm -f $@
 
-ifneq ($(ROOT),)
-root_frob=;s|$(ROOT)|\#|g
-root_unfrob=;s|\#|$(ROOT)|g
-endif
-
 %.o $(call dotify,%.c.dep) : %.c
 	@mkdir -p $(@D)
 	$(COMPILE.c) $(PROJECT_CFLAGS) -MD -o $*.o $<
 	@cat $*.d >$(call dotify,$*.c.dep)
 	@sed -e 's/#.*//;s/^[^:]*://;s/ *\\$$//;s/^ *//;/^$$/d;s/$$/ :/' <$*.d >>$(call dotify,$*.c.dep)
-	@sed -e 's/#.*//;s/ [^ ]*\.c//$(root_frob);s| /[^ ]*||g;/^ *\\$$/d$(root_unfrob);s/^\([^ ][^ ]*\):/OBJNEEDS_\1=/;s/\([^ ]*\.h\)/\$$(HDROBJS_\1)/g' <$*.d >>$(call dotify,$*.c.dep)
+	@sed -e 's/#.*//;s/ [^ ]*\.c//g;s/^\([^ ][^ ]*\):/OBJNEEDS_\1=/;s/\([^ ]*\.h\)/\$$(HDROBJS_\1)/g' <$*.d >>$(call dotify,$*.c.dep)
 	@rm $*.d
 
 # objneeds works out which object files are required to link the given
@@ -126,14 +124,14 @@ objneeds_aux=$(if $(SAW_$(1)),,$(eval SAW_$(1):=1)$(eval SEEN+=$(1))$(foreach O,
 
 define build_executable
 $(1): $(call objneeds,$(or $(MAINOBJ_$(1)),$(2)$(1).o))
-	$$(CC) $$(CFLAGS) $(PROJECT_CFLAGS) $$^ -o $$@ -pthread
+	$$(CC) $$(CFLAGS) $$(PROJECT_CFLAGS) $$(filter-out -%,$$^) $$(filter -%,$$^) -o $$@
 endef
 
 $(foreach E,$(EXECUTABLES),$(eval $(call build_executable,$(E),src/)))
 $(foreach E,$(TEST_EXECUTABLES),$(eval $(call build_executable,$(E),test/)))
 
-.PHONY: test
-test: $(TEST_EXECUTABLES)
+.PHONY: run_tests
+run_tests: $(TEST_EXECUTABLES)
 	$(foreach T,$(TEST_EXECUTABLES),./$(T) &&) :
 
 .PHONY: coverage

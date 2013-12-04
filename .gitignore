@@ -1,9 +1,10 @@
 *~
 *.o
-*.dep
+.*.dep
 *.gcov
 *.gcda
 *.gcno
+
 buffer_test
 tasklet_test
 queue_test

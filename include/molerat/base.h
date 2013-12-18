@@ -14,7 +14,7 @@ typedef unsigned char bool_t;
 #define TRUE 1
 #define FALSE 0
 
-#define STATIC_ASSERT(e) ((void)sizeof(char[1-2*!(e)*2]))
+#define STATIC_ASSERT(e) ((void)sizeof(char[1-2*!(e)]))
 
 #define container_of(ptr, type, member) \
 	({ const __typeof__(((type *)0)->member ) *__mptr = (ptr); \
@@ -31,7 +31,8 @@ void die(const char *fmt, ...) __attribute__ ((noreturn,format (printf, 1, 2)));
 
 void *xalloc(size_t s);
 void *xrealloc(void *p, size_t s);
-size_t xsprintf(char **buf, const char *fmt, ...);
+
+char *xsprintf(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 
 /* Abort on a failed syscall */
 void check_syscall(const char *name, int ok);

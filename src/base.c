@@ -50,18 +50,19 @@ void *xrealloc(void *p, size_t s)
 	return NULL;
 }
 
-size_t xsprintf(char **buf, const char *fmt, ...)
+char *xsprintf(const char *fmt, ...)
 {
-	int res;
-	va_list ap;
-	va_start(ap, fmt);
+        int res;
+        char *buf;
+        va_list ap;
+        va_start(ap, fmt);
 
-	res = vasprintf(buf, fmt, ap);
-	va_end(ap);
-	if (res >= 0)
-		return res;
+        res = vasprintf(&buf, fmt, ap);
+        va_end(ap);
+        if (res >= 0)
+                return buf;
 
-	die("asprintf failed");
+        die("asprintf failed");
 }
 
 static void safe_strerror(int errnum, char *buf, size_t sz)

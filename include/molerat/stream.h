@@ -5,11 +5,15 @@
 
 struct tasklet;
 
-/* The outcome of reading from or writing to a stream is indicated by
- * a ssize_t.  Non-negative values mean progress was made (unlike for
- * read(2), zero result does not mean the stream was closed; it merely
- * means "try again").  Negative values are the following: */
-enum {
+/* The outcome of reading from, writing to or closing a stream uses
+ * the stream_result enum.  Reading and writing use a ssize_t where
+ * non-negative values mean progress was made (unlike for read(2), a
+ * zero result does not mean the stream was closed; it merely means
+ * "try again"). */
+enum stream_result {
+	/* A close succeeded. */
+	STREAM_OK = 0,
+
 	/* The operation could not be completed, and the tasklet has
 	   been put on a wait_list to be woken when progress can be
 	   made. */
@@ -32,7 +36,7 @@ struct stream_ops {
 			struct tasklet *t, struct error *e);
 	ssize_t (*write)(struct stream *s, const void *buf, size_t len,
 			 struct tasklet *t, struct error *e);
-	bool_t (*close)(struct stream *s, struct error *e);
+	enum stream_result (*close)(struct stream *s, struct error *e);
 };
 
 static inline void stream_destroy(struct stream *s)
@@ -53,7 +57,7 @@ static inline ssize_t stream_write(struct stream *s, const void *buf,
 	return s->ops->write(s, buf, len, t, e);
 }
 
-static inline bool_t stream_close(struct stream *s, struct error *e)
+static inline enum stream_result stream_close(struct stream *s, struct error *e)
 {
 	return s->ops->close(s, e);
 }

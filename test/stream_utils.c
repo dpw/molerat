@@ -61,12 +61,13 @@ static void bytes_read_stream_destroy(struct stream *gs)
 	free(s);
 }
 
-static bool_t bytes_read_stream_close(struct stream *gs, struct error *err)
+static enum stream_result bytes_read_stream_close(struct stream *gs,
+						  struct error *err)
 {
 	(void)gs;
 	(void)err;
 
-	return TRUE;
+	return STREAM_OK;
 }
 
 static struct stream_ops bytes_read_stream_ops = {
@@ -118,8 +119,8 @@ static void byte_at_a_time_stream_destroy(struct stream *gs)
 	free(s);
 }
 
-static bool_t byte_at_a_time_stream_close(struct stream *gs,
-					       struct error *err)
+static enum stream_result byte_at_a_time_stream_close(struct stream *gs,
+						      struct error *err)
 {
 	struct byte_at_a_time_stream *s
 		= container_of(gs, struct byte_at_a_time_stream, base);

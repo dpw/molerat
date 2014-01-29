@@ -204,20 +204,20 @@ static struct socket *simple_socket_create(int fd)
 	return &s->base;
 }
 
-static bool_t simple_socket_close_locked(struct simple_socket *s,
-					 struct error *e)
+static enum stream_result simple_socket_close_locked(struct simple_socket *s,
+						     struct error *e)
 {
 	if (s->fd >= 0) {
 		watched_fd_destroy(s->watched_fd);
 		if (close(s->fd) < 0 && e) {
 			error_errno(e, "close");
-			return FALSE;
+			return STREAM_ERROR;
 		}
 
 		s->fd = -1;
 	}
 
-	return TRUE;
+	return STREAM_OK;
 }
 
 static void simple_socket_fini(struct simple_socket *s)
@@ -237,7 +237,8 @@ static void simple_socket_destroy(struct stream *gs)
 	free(s);
 }
 
-static bool_t simple_socket_close(struct stream *gs, struct error *e)
+static enum stream_result simple_socket_close(struct stream *gs,
+					      struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
 	bool_t res;
@@ -587,7 +588,8 @@ static bool_t connector_ok(struct connector *c, struct error *err)
 	return 0;
 }
 
-static bool_t client_socket_close(struct stream *gs, struct error *e)
+static enum stream_result client_socket_close(struct stream *gs,
+					      struct error *e)
 {
 	struct client_socket *s = (struct client_socket *)gs;
 
@@ -602,7 +604,7 @@ static bool_t client_socket_close(struct stream *gs, struct error *e)
 		connector_destroy(s->connector);
 		s->connector = NULL;
 		mutex_unlock(&s->base.mutex);
-		return TRUE;
+		return STREAM_OK;
 	}
 }
 

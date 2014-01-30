@@ -44,7 +44,8 @@ struct http_header_iter {
 };
 
 
-void http_reader_init(struct http_reader *r, struct stream *stream, bool_t req);
+void http_reader_init_request(struct http_reader *r, struct stream *stream);
+void http_reader_init_response(struct http_reader *r, struct stream *stream);
 void http_reader_fini(struct http_reader *r);
 
 /* Result codes from http_reader_prebody */

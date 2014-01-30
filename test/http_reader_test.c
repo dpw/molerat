@@ -102,7 +102,7 @@ static void check_http_reader(struct stream *s)
 	struct error err;
 	char buf[14];
 
-	http_reader_init(&reader, s, TRUE);
+	http_reader_init_request(&reader, s);
 
 	/* First request */
 	assert(http_reader_prebody(&reader, NULL, &err)

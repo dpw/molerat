@@ -23,7 +23,8 @@ typedef struct http_header_internal {
 	int value_end;
 } header_t;
 
-void http_reader_init(struct http_reader *r, struct stream *stream, bool_t req)
+static void http_reader_init(struct http_reader *r, struct stream *stream,
+			     enum http_parser_type type)
 {
 	r->state = HTTP_READER_PREBODY;
 	r->parsed = 0;
@@ -41,8 +42,18 @@ void http_reader_init(struct http_reader *r, struct stream *stream, bool_t req)
 	r->settings.on_body = on_body;
 	r->settings.on_message_complete = on_message_complete;
 
-	http_parser_init(&r->parser, req ? HTTP_REQUEST : HTTP_RESPONSE);
+	http_parser_init(&r->parser, type);
 	r->parser.data = r;
+}
+
+void http_reader_init_request(struct http_reader *r, struct stream *stream)
+{
+	http_reader_init(r, stream, HTTP_REQUEST);
+}
+
+void http_reader_init_response(struct http_reader *r, struct stream *stream)
+{
+	http_reader_init(r, stream, HTTP_RESPONSE);
 }
 
 void http_reader_fini(struct http_reader *r)

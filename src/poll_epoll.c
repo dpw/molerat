@@ -10,13 +10,13 @@
 #define ASSERT_SINGLE_BIT(bit) STATIC_ASSERT(!((bit) & ((bit) - 1)))
 #define TRANSLATE_BIT(val, from, to) ((unsigned int)(from) > (unsigned int)(to) ? ((val) & (from)) / ((from) / (to)) : ((val) & (from)) * ((to) / (from)))
 
+ASSERT_SINGLE_BIT(EPOLLIN);
+ASSERT_SINGLE_BIT(EPOLLOUT);
+ASSERT_SINGLE_BIT(EPOLLERR);
+
 /* Translate an event set to the system representation */
 static unsigned int events_to_system(poll_events_t events)
 {
-	ASSERT_SINGLE_BIT(EPOLLIN);
-	ASSERT_SINGLE_BIT(EPOLLOUT);
-	ASSERT_SINGLE_BIT(EPOLLERR);
-
 	return TRANSLATE_BIT(events, WATCHED_FD_IN, EPOLLIN)
 		| TRANSLATE_BIT(events, WATCHED_FD_OUT, EPOLLOUT)
 		| TRANSLATE_BIT(events, WATCHED_FD_ERR, EPOLLERR);

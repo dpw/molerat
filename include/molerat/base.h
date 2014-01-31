@@ -14,7 +14,10 @@ typedef unsigned char bool_t;
 #define TRUE 1
 #define FALSE 0
 
-#define STATIC_ASSERT(e) ((void)sizeof(char[1-2*!(e)]))
+#define PASTE(a,b) PASTE_AUX(a,b)
+#define PASTE_AUX(a,b) a##b
+
+#define STATIC_ASSERT(e) typedef char PASTE(_static_assert_,__LINE__)[1-2*!(e)] __attribute__((unused))
 
 #define container_of(ptr, type, member) \
 	({ const __typeof__(((type *)0)->member ) *__mptr = (ptr); \

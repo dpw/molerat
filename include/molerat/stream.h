@@ -36,7 +36,8 @@ struct stream_ops {
 			struct tasklet *t, struct error *e);
 	ssize_t (*write)(struct stream *s, const void *buf, size_t len,
 			 struct tasklet *t, struct error *e);
-	enum stream_result (*close)(struct stream *s, struct error *e);
+	enum stream_result (*close)(struct stream *s, struct tasklet *t,
+				    struct error *e);
 };
 
 static inline void stream_destroy(struct stream *s)
@@ -57,9 +58,11 @@ static inline ssize_t stream_write(struct stream *s, const void *buf,
 	return s->ops->write(s, buf, len, t, e);
 }
 
-static inline enum stream_result stream_close(struct stream *s, struct error *e)
+static inline enum stream_result stream_close(struct stream *s,
+					      struct tasklet *t,
+					      struct error *e)
 {
-	return s->ops->close(s, e);
+	return s->ops->close(s, t, e);
 }
 
 #endif

@@ -41,9 +41,11 @@ static inline ssize_t socket_write(struct socket *s, const void *buf,
 	return stream_write(socket_stream(s), buf, len, t, e);
 }
 
-static inline bool_t socket_close(struct socket *s, struct error *e)
+static inline enum stream_result socket_close(struct socket *s,
+					      struct tasklet *t,
+					      struct error *e)
 {
-	return stream_close(socket_stream(s), e);
+	return stream_close(socket_stream(s), t, e);
 }
 
 static inline bool_t socket_close_read(struct socket *s, struct error *e)

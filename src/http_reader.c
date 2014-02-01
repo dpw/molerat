@@ -105,14 +105,23 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 {
 	enum http_reader_prebody_result waiting_result;
 
-	if (r->state != HTTP_READER_PREBODY) {
-		assert(r->state == HTTP_READER_EOM);
+	switch (r->state) {
+	case HTTP_READER_PREBODY:
+		break;
 
+	case HTTP_READER_EOM:
 		/* Clean up previous request data. */
 		growbuf_shift(&r->prebody, r->parsed);
 		r->headers_used = 0;
 		r->parsed = 0;
 		r->state = HTTP_READER_PREBODY;
+		break;
+
+	case HTTP_READER_END:
+		return HTTP_READER_PREBODY_CLOSED;
+
+	default:
+		abort();
 	}
 
 	waiting_result = HTTP_READER_PREBODY_WAITING;
@@ -161,14 +170,16 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 			unparsed -= consumed;
 			switch (HTTP_PARSER_ERRNO(&r->parser)) {
 			case HPE_OK:
-				if (consumed == 0)
+				if (consumed == 0) {
 					/* Unparsed must have
 					   previously been 0, so this
 					   must be the first pass
 					   through the loop, and the
 					   stream read must have
 					   returned STREAM_END. */
+					r->state = HTTP_READER_PREBODY_CLOSED;
 					return HTTP_READER_PREBODY_CLOSED;
+				}
 
 				break;
 

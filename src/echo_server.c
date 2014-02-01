@@ -8,6 +8,7 @@
 struct echoer {
 	struct mutex mutex;
 	struct tasklet tasklet;
+	struct error err;
 	struct socket *socket;
 	char *buf;
 	size_t len;
@@ -15,23 +16,54 @@ struct echoer {
 	bool_t verbose;
 };
 
+static void echoer_echo(void *v_e);
+static void echoer_close(void *v_e);
+
+static struct echoer *echoer_create(struct socket *s, bool_t verbose)
+{
+	struct echoer *e = xalloc(sizeof *e);
+	mutex_init(&e->mutex);
+	tasklet_init(&e->tasklet, &e->mutex, e);
+	error_init(&e->err);
+	e->socket = s;
+	e->buf = xalloc(BUF_SIZE);
+	e->pos = e->len = 0;
+	e->verbose = verbose;
+
+	mutex_lock(&e->mutex);
+	tasklet_goto(&e->tasklet, echoer_echo);
+
+	return e;
+}
+
+static void echoer_destroy(struct echoer *e)
+{
+	if (!error_ok(&e->err))
+		fprintf(stderr, "%s\n", error_message(&e->err));
+
+	tasklet_fini(&e->tasklet);
+	socket_destroy(e->socket);
+	error_fini(&e->err);
+	mutex_unlock_fini(&e->mutex);
+	free(e->buf);
+	free(e);
+}
+
 static void echoer_echo(void *v_e)
 {
 	struct echoer *e = v_e;
-	struct error err;
 	ssize_t res;
-
-	error_init(&err);
 
 	for (;;) {
 		if (e->pos == e->len) {
 			switch (res = socket_read(e->socket, e->buf, BUF_SIZE,
-						  &e->tasklet, &err)) {
+						  &e->tasklet, &e->err)) {
 			case STREAM_WAITING:
 				goto waiting;
 
 			case STREAM_END:
-				goto done;
+				tasklet_goto(&e->tasklet, echoer_close);
+				return;
 
 			case STREAM_ERROR:
 				goto error;
@@ -42,7 +74,7 @@ static void echoer_echo(void *v_e)
 		}
 
 		switch (res = socket_write(e->socket, e->buf + e->pos,
-					  e->len - e->pos, &e->tasklet, &err)) {
+				       e->len - e->pos, &e->tasklet, &e->err)) {
 		case STREAM_WAITING:
 			goto waiting;
 
@@ -57,38 +89,28 @@ static void echoer_echo(void *v_e)
 	mutex_unlock(&e->mutex);
 	return;
 
- done:
-	socket_close(e->socket, &err);
-	if (e->verbose)
-		fprintf(stderr, "Connection closed\n");
-
  error:
-	if (!error_ok(&err))
-		fprintf(stderr, "%s\n", error_message(&err));
-
-	tasklet_fini(&e->tasklet);
-	socket_destroy(e->socket);
-	mutex_unlock_fini(&e->mutex);
-	free(e->buf);
-	free(e);
-	error_fini(&err);
+	echoer_destroy(e);
 }
 
-
-static struct echoer *echoer_create(struct socket *s, bool_t verbose)
+static void echoer_close(void *v_e)
 {
-	struct echoer *e = xalloc(sizeof *e);
-	mutex_init(&e->mutex);
-	tasklet_init(&e->tasklet, &e->mutex, e);
-	e->socket = s;
-	e->buf = xalloc(BUF_SIZE);
-	e->pos = e->len = 0;
-	e->verbose = verbose;
+	struct echoer *e = v_e;
 
-	mutex_lock(&e->mutex);
-	tasklet_goto(&e->tasklet, echoer_echo);
+	switch (socket_close(e->socket, &e->tasklet, &e->err)) {
+	case STREAM_WAITING:
+		mutex_unlock(&e->mutex);
+		return;
 
-	return e;
+	case STREAM_OK:
+		if (e->verbose)
+			fprintf(stderr, "Connection closed\n");
+
+		/* fall through */
+
+	default:
+		echoer_destroy(e);
+	}
 }
 
 struct echo_server {

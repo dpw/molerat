@@ -85,8 +85,7 @@ static void read_response_prebody(void *v_c)
 	switch (http_reader_prebody(&c->reader, &c->tasklet, &c->err)) {
 	case HTTP_READER_PREBODY_WAITING:
 	case HTTP_READER_PREBODY_PROGRESS:
-		mutex_unlock(&c->mutex);
-		return;
+		goto out;
 
 	case HTTP_READER_PREBODY_DONE:
 		tasklet_goto(&c->tasklet, read_response_body);
@@ -99,18 +98,26 @@ static void read_response_prebody(void *v_c)
 		goto error;
 	}
 
-	if (!socket_close(c->socket, &c->err))
-		goto error;
+	switch (socket_close(c->socket, &c->tasklet, &c->err)) {
+	case STREAM_OK:
+		fprintf(stderr, "Connection done\n");
+		goto stop;
 
-	fprintf(stderr, "Connection done\n");
-	goto out;
+	case STREAM_WAITING:
+		goto out;
+
+	default:
+		break;
+	}
 
  error:
 	fprintf(stderr, "Error: %s\n", error_message(&c->err));
 
- out:
+ stop:
 	tasklet_stop(&c->tasklet);
 	application_stop();
+
+ out:
 	mutex_unlock(&c->mutex);
 }
 

@@ -8,7 +8,8 @@ struct socket;
 struct tasklet;
 
 struct http_reader {
-	enum { HTTP_READER_PREBODY, HTTP_READER_BODY, HTTP_READER_EOM } state;
+	enum { HTTP_READER_PREBODY, HTTP_READER_BODY, HTTP_READER_EOM,
+	       HTTP_READER_END } state;
 
 	/* The offset in prebody reached by the http_parser */
 	int parsed;

@@ -238,10 +238,13 @@ static void simple_socket_destroy(struct stream *gs)
 }
 
 static enum stream_result simple_socket_close(struct stream *gs,
+					      struct tasklet *t,
 					      struct error *e)
 {
 	struct simple_socket *s = (struct simple_socket *)gs;
 	bool_t res;
+
+	(void)t;
 
 	assert(((struct socket *)gs)->ops == &simple_socket_ops);
 	mutex_lock(&s->mutex);
@@ -589,6 +592,7 @@ static bool_t connector_ok(struct connector *c, struct error *err)
 }
 
 static enum stream_result client_socket_close(struct stream *gs,
+					      struct tasklet *t,
 					      struct error *e)
 {
 	struct client_socket *s = (struct client_socket *)gs;
@@ -598,7 +602,7 @@ static enum stream_result client_socket_close(struct stream *gs,
 
 	if (!s->connector) {
 		mutex_unlock(&s->base.mutex);
-		return simple_socket_close(gs, e);
+		return simple_socket_close(gs, t, e);
 	}
 	else {
 		connector_destroy(s->connector);

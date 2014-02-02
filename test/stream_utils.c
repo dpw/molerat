@@ -4,19 +4,6 @@
 
 #include "stream_utils.h"
 
-static ssize_t read_only_stream_write(struct stream *gs, const void *buf,
-				      size_t len, struct tasklet *t,
-				      struct error *err)
-{
-	(void)gs;
-	(void)buf;
-	(void)len;
-	(void)t;
-
-	error_set(err, ERROR_INVALID, "write to a read-only stream");
-	return STREAM_ERROR;
-}
-
 struct bytes_read_stream {
 	struct stream base;
 	struct bytes buf;
@@ -75,7 +62,7 @@ static enum stream_result bytes_read_stream_close(struct stream *gs,
 static struct stream_ops bytes_read_stream_ops = {
 	bytes_read_stream_destroy,
 	bytes_read_stream_read,
-	read_only_stream_write,
+	stream_read_only_write,
 	bytes_read_stream_close
 };
 

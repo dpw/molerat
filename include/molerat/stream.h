@@ -65,4 +65,11 @@ static inline enum stream_result stream_close(struct stream *s,
 	return s->ops->close(s, t, e);
 }
 
+ssize_t stream_read_only_write(struct stream *gs, const void *buf,
+			       size_t len, struct tasklet *t,
+			       struct error *err);
+ssize_t stream_write_only_read(struct stream *gs, void *buf,
+			       size_t len, struct tasklet *t,
+			       struct error *err);
+
 #endif

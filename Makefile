@@ -27,7 +27,8 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 	poll_common.c poll_poll.c poll_epoll.c socket.c echo_server.c \
 	echo_server_main.c http-parser/http_parser.c http_reader.c \
 	http_status_gen.c http_writer.c http_server.c http_server_main.c \
-	http_client.c http_status.c skinny-mutex/skinny_mutex.c
+	http_client.c http_status.c skinny-mutex/skinny_mutex.c \
+	stream.c
 
 # Test source files under test/
 TEST_SRCS=buffer_test.c tasklet_test.c queue_test.c socket_test.c timer_test.c \
@@ -53,7 +54,6 @@ SRCDIRS=src src/skinny-mutex src/http-parser test
 # These HDROBJS definitions say which object files correspond to which
 # headers.  I.e., if the header file is included, then the given object
 # files should be linked in.
-HDROBJS_$(ROOT)include/molerat/stream.h=
 HDROBJS_$(ROOT)src/poll.h=src/poll_common.o
 HDROBJS_$(ROOT)test/stream_utils.h=test/stream_utils.o
 

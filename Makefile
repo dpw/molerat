@@ -9,7 +9,7 @@ endif
 MAKEFILE:=$(firstword $(MAKEFILE_LIST))
 
 # You can override this from the command line
-CFLAGS=-Wall -Wextra -ansi -g
+CFLAGS=-Wall -Wextra -Werror -ansi -g
 
 # ROOT is the path to the source tree.  If non-empty, then it includes
 # a trailing slash.

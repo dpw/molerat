@@ -63,7 +63,9 @@ enum http_reader_prebody_result {
 	HTTP_READER_PREBODY_WAITING,
 
 	/* Data was received and the tasklet made some progress, but
-	   still ended up waiting. */
+	   still ended up waiting.  This will generally be treated
+	   like HTTP_REaDER_PREBODY_WAITING, but allows the caller to
+	   know that some data was received. */
 	HTTP_READER_PREBODY_PROGRESS,
 
 	/* An error occurred. */

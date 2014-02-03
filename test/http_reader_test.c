@@ -1,5 +1,7 @@
 #include <string.h>
 
+#include <molerat/tasklet.h>
+#include <molerat/application.h>
 #include <molerat/buffer.h>
 #include <molerat/http_reader.h>
 
@@ -79,74 +81,166 @@ static const char test_data[] =
 	" bar\r\n"
 	"\r\n";
 
-static size_t read_full_body(struct http_reader *r, char *buf, size_t len,
-			     struct error *err)
+struct http_reader_test {
+	struct mutex mutex;
+	struct tasklet tasklet;
+	struct stream *stream;
+	struct error err;
+	struct http_reader reader;
+
+	int step;
+	size_t pos;
+	char buf[14];
+};
+
+static ssize_t read_body(struct http_reader_test *t, size_t len)
 {
-	size_t got = 0;
-
 	for (;;) {
-		ssize_t res = http_reader_body(r, buf, len, NULL, err);
+		ssize_t res = http_reader_body(&t->reader,
+					       t->buf + t->pos, len - t->pos,
+					       &t->tasklet, &t->err);
 		if (res == STREAM_END)
-			return got;
-
-		assert(res >= 0);
-		buf += res;
-		len -= res;
-		got += res;
+			return t->pos;
+		else if (res < 0)
+			return res;
+		else
+			t->pos += res;
 	}
 }
 
-static void check_http_reader(struct stream *s)
+#define HRT_STEP t->step =__LINE__; case __LINE__
+
+static void http_reader_test(void *v_t)
 {
-	struct http_reader reader;
-	struct error err;
-	char buf[14];
+	struct http_reader_test *t = v_t;
+	enum http_reader_prebody_result pres;
+	ssize_t res;
 
-	http_reader_init_request(&reader, s);
+	switch (t->step) {
+	case 0:
+		http_reader_init_request(&t->reader, t->stream);
 
-	/* First request */
-	assert(http_reader_prebody(&reader, NULL, &err)
-	                                        == HTTP_READER_PREBODY_DONE);
-	assert(http_reader_method(&reader) == HTTP_GET);
-	assert(bytes_compare(http_reader_url(&reader), c_string_bytes("req1")));
-	check_headers(&reader, 2, "<Host>=<foo.example.com>,<User-Agent>=<UA1>");
-	assert(http_reader_body(&reader, buf, 0, NULL, &err) == 0);
-	assert(http_reader_body(&reader, buf, 1, NULL, &err) == STREAM_END);
+	HRT_STEP:
+		/* First request */
+		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
+		if (pres == HTTP_READER_PREBODY_WAITING
+		    || pres == HTTP_READER_PREBODY_PROGRESS)
+			goto out;
 
-	/* Second request */
-	assert(http_reader_prebody(&reader, NULL, &err)
-	                                        == HTTP_READER_PREBODY_DONE);
-	assert(http_reader_method(&reader) == HTTP_POST);
-	assert(bytes_compare(http_reader_url(&reader), c_string_bytes("req2")));
-	check_headers(&reader, 3, "<Host>=<bar.example.com>,<Transfer-Encoding>=<chunked>,<User-Agent>=<UA2>");
-	assert(read_full_body(&reader, buf, 14, &err) == 13);
-	assert(!memcmp(buf, "hello, world!", 13));
-	assert(http_reader_body(&reader, buf, 1, NULL, &err) == STREAM_END);
+		assert(pres == HTTP_READER_PREBODY_DONE);
+		assert(http_reader_method(&t->reader) == HTTP_GET);
+		assert(bytes_compare(http_reader_url(&t->reader),
+				     c_string_bytes("req1")));
+		check_headers(&t->reader, 2,
+			      "<Host>=<foo.example.com>,<User-Agent>=<UA1>");
 
-	/* Third request */
-	assert(http_reader_prebody(&reader, NULL, &err)
-	                                        == HTTP_READER_PREBODY_DONE);
-	assert(http_reader_method(&reader) == HTTP_GET);
-	assert(bytes_compare(http_reader_url(&reader), c_string_bytes("req3")));
-	/* This is actually wrong, it should be "foo bar", but looks
-	   like a bug in http-parser */
-	check_headers(&reader, 3, "<Continuated-Header>=<foobar>,<Host>=<baz.example.com>,<User-Agent>=<UA3>");
-	assert(http_reader_body(&reader, buf, 1, NULL, &err) == STREAM_END);
+	HRT_STEP:
+		res = http_reader_body(&t->reader, t->buf, 1, &t->tasklet,
+				       &t->err);
+		if (res == STREAM_WAITING)
+			goto out;
 
-	/* End of stream */
-	assert(http_reader_prebody(&reader, NULL, &err)
-	                                        == HTTP_READER_PREBODY_CLOSED);
+		assert(res == STREAM_END);
 
-	http_reader_fini(&reader);
-	stream_destroy(s);
+	HRT_STEP:
+		/* Second request */
+		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
+		if (pres == HTTP_READER_PREBODY_WAITING
+		    || pres == HTTP_READER_PREBODY_PROGRESS)
+			goto out;
 
+		assert(pres == HTTP_READER_PREBODY_DONE);
+		assert(http_reader_method(&t->reader) == HTTP_POST);
+		assert(bytes_compare(http_reader_url(&t->reader),
+				     c_string_bytes("req2")));
+		check_headers(&t->reader, 3,
+			      "<Host>=<bar.example.com>,<Transfer-Encoding>=<chunked>,<User-Agent>=<UA2>");
+
+	HRT_STEP:
+		/* try a 0-length read */
+		res = http_reader_body(&t->reader, t->buf, 0, &t->tasklet,
+				       &t->err);
+		if (res == STREAM_WAITING)
+			goto out;
+
+		assert(res == 0);
+
+		t->pos = 0;
+	HRT_STEP:
+		res = read_body(t, 14);
+		if (res == STREAM_WAITING)
+			goto out;
+
+		assert(res == 13);
+		assert(!memcmp(t->buf, "hello, world!", 13));
+
+	HRT_STEP:
+		/* Third request */
+		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
+		if (pres == HTTP_READER_PREBODY_WAITING
+		    || pres == HTTP_READER_PREBODY_PROGRESS)
+			goto out;
+
+		assert(pres == HTTP_READER_PREBODY_DONE);
+		assert(http_reader_method(&t->reader) == HTTP_GET);
+		assert(bytes_compare(http_reader_url(&t->reader),
+				     c_string_bytes("req3")));
+		/* This is actually wrong, it should be "foo bar", but
+		   looks like a bug in http-parser */
+		check_headers(&t->reader, 3, "<Continuated-Header>=<foobar>,<Host>=<baz.example.com>,<User-Agent>=<UA3>");
+
+	HRT_STEP:
+		res = http_reader_body(&t->reader, t->buf, 1, &t->tasklet,
+				       &t->err);
+		if (res == STREAM_WAITING)
+			goto out;
+
+		assert(res == STREAM_END);
+
+	HRT_STEP:
+		/* End of stream */
+		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
+		if (pres == HTTP_READER_PREBODY_WAITING
+		    || pres == HTTP_READER_PREBODY_PROGRESS)
+			goto out;
+
+		assert(pres == HTTP_READER_PREBODY_CLOSED);
+	}
+
+	http_reader_fini(&t->reader);
+	stream_destroy(t->stream);
+	error_fini(&t->err);
+	tasklet_fini(&t->tasklet);
+	mutex_unlock_fini(&t->mutex);
+
+	application_stop();
+	return;
+
+ out:
+	mutex_unlock(&t->mutex);
+}
+
+static void test_http_reader(struct stream *stream)
+{
+	struct http_reader_test test;
+
+	mutex_init(&test.mutex);
+	tasklet_init(&test.tasklet, &test.mutex, &test);
+	test.stream = stream;
+	test.step = 0;
+	error_init(&test.err);
+
+	mutex_lock(&test.mutex);
+	tasklet_goto(&test.tasklet, http_reader_test);
+	application_run();
 }
 
 int main(void)
 {
-	check_http_reader(bytes_read_stream_create(c_string_bytes(test_data)));
+	application_prepare();
 
-	check_http_reader(byte_at_a_time_stream_create(
+	test_http_reader(bytes_read_stream_create(c_string_bytes(test_data)));
+	test_http_reader(byte_at_a_time_stream_create(
 			  bytes_read_stream_create(c_string_bytes(test_data))));
 
 	return 0;

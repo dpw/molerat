@@ -1,5 +1,6 @@
 #include <string.h>
 
+#include <molerat/tasklet.h>
 #include <molerat/buffer.h>
 
 #include "stream_utils.h"
@@ -70,6 +71,7 @@ static struct stream_ops bytes_read_stream_ops = {
 struct byte_at_a_time_stream {
 	struct stream base;
 	struct stream *underlying;
+	bool_t waited;
 };
 
 static struct stream_ops byte_at_a_time_stream_ops;
@@ -79,16 +81,26 @@ struct stream *byte_at_a_time_stream_create(struct stream *underlying)
 	struct byte_at_a_time_stream *s = xalloc(sizeof *s);
 	s->base.ops = &byte_at_a_time_stream_ops;
 	s->underlying = underlying;
+	s->waited = FALSE;
 	return &s->base;
 }
 
 static ssize_t byte_at_a_time_stream_read(struct stream *gs, void *buf,
-					       size_t len, struct tasklet *t,
-					       struct error *err)
+					  size_t len, struct tasklet *t,
+					  struct error *err)
 {
 	struct byte_at_a_time_stream *s
 		= container_of(gs, struct byte_at_a_time_stream, base);
-	return stream_read(s->underlying, buf, len > 0, t, err);
+
+	if (s->waited) {
+		s->waited = FALSE;
+		return stream_read(s->underlying, buf, len > 0, t, err);
+	}
+	else {
+		s->waited = TRUE;
+		tasklet_run(t);
+		return STREAM_WAITING;
+	}
 }
 
 static ssize_t byte_at_a_time_stream_write(struct stream *gs, const void *buf,
@@ -97,7 +109,16 @@ static ssize_t byte_at_a_time_stream_write(struct stream *gs, const void *buf,
 {
 	struct byte_at_a_time_stream *s
 		= container_of(gs, struct byte_at_a_time_stream, base);
-	return stream_write(s->underlying, buf, len > 0, t, err);
+
+	if (s->waited) {
+		s->waited = FALSE;
+		return stream_write(s->underlying, buf, len > 0, t, err);
+	}
+	else {
+		s->waited = TRUE;
+		tasklet_run(t);
+		return STREAM_WAITING;
+	}
 }
 
 static void byte_at_a_time_stream_destroy(struct stream *gs)

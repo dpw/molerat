@@ -76,7 +76,6 @@ MAINOBJ_http_server=src/http_server_main.o
 # That completes the definition of the project sources and structure.
 # Now for the magic.
 
-.PHONY: -pthread
 HDROBJS_/usr/include/pthread.h=-pthread
 OBJNEEDS_-pthread=
 
@@ -130,15 +129,14 @@ objneeds_aux=$(if $(SAW_$(1)),,$(eval SAW_$(1):=1)$(eval SEEN+=$(1))$(if $(filte
 lookup_undefined=$(if $(filter-out undefined,$(flavor $(1))),$($(1)),undefined)
 
 define build_executable
-build_executable_objneeds:=$(call objneeds,$(or $(MAINOBJ_$(1)),$(2)$(1).o))
-ifeq "$$(filter undefined,$$(build_executable_objneeds))" ""
-$(1): $$(build_executable_objneeds)
-	$$(CC) $$(CFLAGS) $(PROJECT_CFLAGS) $$^ -o $$@
+build_executable_objneeds_$(1):=$(call objneeds,$(or $(MAINOBJ_$(1)),$(2)$(1).o))
+ifeq "$$(filter undefined,$$(build_executable_objneeds_$(1)))" ""
+$(1): $$(filter-out -pthread,$$(build_executable_objneeds_$(1)))
+	$$(CC) $$(CFLAGS) $(PROJECT_CFLAGS) $$(build_executable_objneeds_$(1)) -o $$@
 else
 $(1):
 	@false
 endif
-build_executable_objneeds:=
 endef
 
 $(foreach E,$(EXECUTABLES),$(eval $(call build_executable,$(E),src/)))

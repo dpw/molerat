@@ -71,5 +71,8 @@ ssize_t stream_read_only_write(struct stream *gs, const void *buf,
 ssize_t stream_write_only_read(struct stream *gs, void *buf,
 			       size_t len, struct tasklet *t,
 			       struct error *err);
+enum stream_result stream_noop_close(struct stream *gs,
+				     struct tasklet *t,
+				     struct error *err);
 
 #endif

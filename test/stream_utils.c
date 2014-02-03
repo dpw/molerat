@@ -1,7 +1,6 @@
 #include <string.h>
 
 #include <molerat/tasklet.h>
-#include <molerat/buffer.h>
 
 #include "stream_utils.h"
 
@@ -49,22 +48,55 @@ static void bytes_read_stream_destroy(struct stream *gs)
 	free(s);
 }
 
-static enum stream_result bytes_read_stream_close(struct stream *gs,
-						  struct tasklet *t,
-						  struct error *err)
-{
-	(void)gs;
-	(void)t;
-	(void)err;
-
-	return STREAM_OK;
-}
-
 static struct stream_ops bytes_read_stream_ops = {
 	bytes_read_stream_destroy,
 	bytes_read_stream_read,
 	stream_read_only_write,
-	bytes_read_stream_close
+	stream_noop_close
+};
+
+
+struct growbuf_write_stream {
+	struct stream base;
+	struct growbuf *growbuf;
+};
+
+static struct stream_ops growbuf_write_stream_ops;
+
+struct stream *growbuf_write_stream_create(struct growbuf *growbuf)
+{
+	struct growbuf_write_stream *s = xalloc(sizeof *s);
+	s->base.ops = &growbuf_write_stream_ops;
+	s->growbuf = growbuf;
+	return &s->base;
+}
+
+static ssize_t growbuf_write_stream_write(struct stream *gs, const void *buf,
+					  size_t len, struct tasklet *t,
+					  struct error *err)
+{
+	struct growbuf_write_stream *s
+		= container_of(gs, struct growbuf_write_stream, base);
+
+	(void)t;
+	(void)err;
+
+	growbuf_append(s->growbuf, buf, len);
+	return len;
+}
+
+static void growbuf_write_stream_destroy(struct stream *gs)
+{
+	struct growbuf_write_stream *s
+		= container_of(gs, struct growbuf_write_stream, base);
+	free(s);
+}
+
+static struct stream_ops growbuf_write_stream_ops = {
+	growbuf_write_stream_destroy,
+	stream_write_only_read,
+	growbuf_write_stream_write,
+	stream_noop_close
 };
 
 

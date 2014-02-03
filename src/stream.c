@@ -26,3 +26,12 @@ ssize_t stream_write_only_read(struct stream *gs, void *buf,
 	return STREAM_ERROR;
 }
 
+enum stream_result stream_noop_close(struct stream *gs, struct tasklet *t,
+				     struct error *err)
+{
+	(void)gs;
+	(void)t;
+	(void)err;
+
+	return STREAM_OK;
+}

@@ -6,8 +6,13 @@
 #include <stdint.h>
 
 #if __STDC_VERSION__ + 0 < 199900L
+
 #define inline __inline__
+
+#ifndef va_copy
 #define va_copy(d,s) __va_copy(d,s)
+#endif
+
 #endif
 
 typedef unsigned char bool_t;

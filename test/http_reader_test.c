@@ -2,7 +2,6 @@
 
 #include <molerat/tasklet.h>
 #include <molerat/application.h>
-#include <molerat/buffer.h>
 #include <molerat/http_reader.h>
 
 #include "stream_utils.h"
@@ -84,11 +83,12 @@ static const char test_data[] =
 struct http_reader_test {
 	struct mutex mutex;
 	struct tasklet tasklet;
-	struct stream *stream;
 	struct error err;
-	struct http_reader reader;
 
+	struct stream *stream;
 	int step;
+
+	struct http_reader reader;
 	size_t pos;
 	char buf[14];
 };
@@ -108,7 +108,7 @@ static ssize_t read_body(struct http_reader_test *t, size_t len)
 	}
 }
 
-#define HRT_STEP t->step =__LINE__; case __LINE__
+#define STEP t->step =__LINE__; case __LINE__
 
 static void http_reader_test(void *v_t)
 {
@@ -120,7 +120,7 @@ static void http_reader_test(void *v_t)
 	case 0:
 		http_reader_init_request(&t->reader, t->stream);
 
-	HRT_STEP:
+	STEP:
 		/* First request */
 		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
 		if (pres == HTTP_READER_PREBODY_WAITING
@@ -134,7 +134,7 @@ static void http_reader_test(void *v_t)
 		check_headers(&t->reader, 2,
 			      "<Host>=<foo.example.com>,<User-Agent>=<UA1>");
 
-	HRT_STEP:
+	STEP:
 		res = http_reader_body(&t->reader, t->buf, 1, &t->tasklet,
 				       &t->err);
 		if (res == STREAM_WAITING)
@@ -142,7 +142,7 @@ static void http_reader_test(void *v_t)
 
 		assert(res == STREAM_END);
 
-	HRT_STEP:
+	STEP:
 		/* Second request */
 		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
 		if (pres == HTTP_READER_PREBODY_WAITING
@@ -156,7 +156,7 @@ static void http_reader_test(void *v_t)
 		check_headers(&t->reader, 3,
 			      "<Host>=<bar.example.com>,<Transfer-Encoding>=<chunked>,<User-Agent>=<UA2>");
 
-	HRT_STEP:
+	STEP:
 		/* try a 0-length read */
 		res = http_reader_body(&t->reader, t->buf, 0, &t->tasklet,
 				       &t->err);
@@ -166,7 +166,7 @@ static void http_reader_test(void *v_t)
 		assert(res == 0);
 
 		t->pos = 0;
-	HRT_STEP:
+	STEP:
 		res = read_body(t, 14);
 		if (res == STREAM_WAITING)
 			goto out;
@@ -174,7 +174,7 @@ static void http_reader_test(void *v_t)
 		assert(res == 13);
 		assert(!memcmp(t->buf, "hello, world!", 13));
 
-	HRT_STEP:
+	STEP:
 		/* Third request */
 		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
 		if (pres == HTTP_READER_PREBODY_WAITING
@@ -189,7 +189,7 @@ static void http_reader_test(void *v_t)
 		   looks like a bug in http-parser */
 		check_headers(&t->reader, 3, "<Continuated-Header>=<foobar>,<Host>=<baz.example.com>,<User-Agent>=<UA3>");
 
-	HRT_STEP:
+	STEP:
 		res = http_reader_body(&t->reader, t->buf, 1, &t->tasklet,
 				       &t->err);
 		if (res == STREAM_WAITING)
@@ -197,7 +197,7 @@ static void http_reader_test(void *v_t)
 
 		assert(res == STREAM_END);
 
-	HRT_STEP:
+	STEP:
 		/* End of stream */
 		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
 		if (pres == HTTP_READER_PREBODY_WAITING
@@ -208,39 +208,42 @@ static void http_reader_test(void *v_t)
 	}
 
 	http_reader_fini(&t->reader);
-	stream_destroy(t->stream);
-	error_fini(&t->err);
-	tasklet_fini(&t->tasklet);
-	mutex_unlock_fini(&t->mutex);
 
+	tasklet_stop(&t->tasklet);
 	application_stop();
-	return;
 
  out:
 	mutex_unlock(&t->mutex);
 }
 
-static void test_http_reader(struct stream *stream)
+static void do_http_reader_test(struct stream *stream)
 {
-	struct http_reader_test test;
+	struct http_reader_test t;
 
-	mutex_init(&test.mutex);
-	tasklet_init(&test.tasklet, &test.mutex, &test);
-	test.stream = stream;
-	test.step = 0;
-	error_init(&test.err);
+	mutex_init(&t.mutex);
+	tasklet_init(&t.tasklet, &t.mutex, &t);
+	error_init(&t.err);
+	t.stream = stream;
+	t.step = 0;
 
-	mutex_lock(&test.mutex);
-	tasklet_goto(&test.tasklet, http_reader_test);
+	mutex_lock(&t.mutex);
+	tasklet_goto(&t.tasklet, http_reader_test);
 	application_run();
+
+	mutex_lock(&t.mutex);
+	error_fini(&t.err);
+	tasklet_fini(&t.tasklet);
+	mutex_unlock_fini(&t.mutex);
+
+	stream_destroy(stream);
 }
 
 int main(void)
 {
 	application_prepare();
 
-	test_http_reader(bytes_read_stream_create(c_string_bytes(test_data)));
-	test_http_reader(byte_at_a_time_stream_create(
+	do_http_reader_test(bytes_read_stream_create(c_string_bytes(test_data)));
+	do_http_reader_test(byte_at_a_time_stream_create(
 			  bytes_read_stream_create(c_string_bytes(test_data))));
 
 	return 0;

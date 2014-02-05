@@ -1,8 +1,14 @@
 #include <assert.h>
 
 #include <molerat/delim_stream.h>
+#include <molerat/endian.h>
 
 typedef uint16_t chunk_size_t;
+
+typedef uint16_le_t net_chunk_size_t;
+#define chunk_size_to_net uint16_to_le
+#define chunk_size_from_net uint16_from_le
+
 #define MAX_CHUNK_SIZE 0x7fff
 #define CHUNK_SIZE_END_BIT 0x8000
 
@@ -96,6 +102,7 @@ static ssize_t delim_write_stream_write(struct stream *gs, const void *buf,
 	struct delim_write_stream *s
 		= container_of(gs, struct delim_write_stream, base);
 	ssize_t res;
+	net_chunk_size_t cl;
 
 	switch (s->state) {
 	case DELIM_STATE_START:
@@ -104,26 +111,26 @@ static ssize_t delim_write_stream_write(struct stream *gs, const void *buf,
 
 		/* write the chunk intro */
 		s->chunk_left = len;
-		res = stream_write(s->underlying, &s->chunk_left,
-				   sizeof(s->chunk_left), t, err);
+		cl = chunk_size_to_net(len);
+		res = stream_write(s->underlying, &cl, sizeof(cl), t, err);
 		if (res <= 0)
 			return res;
 
 		s->state = res;
-		if (unlikely((size_t)res < sizeof(s->chunk_left)))
+		if (unlikely((size_t)res < sizeof(cl)))
 			return 0;
 
 		return write_payload(s, buf, len, t, err);
 
 	DELIM_STATE_CHUNK_INTRO_CASES:
-		res = stream_write(s->underlying,
-				   (char *)&s->chunk_left + s->state,
-				   sizeof(s->chunk_left) - s->state, t, err);
+		cl = chunk_size_to_net(s->chunk_left);
+		res = stream_write(s->underlying, (char *)&cl + s->state,
+				   sizeof(cl) - s->state, t, err);
 		if (res <= 0)
 			return res;
 
 		s->state += res;
-		if (unlikely(s->state < sizeof(s->chunk_left)))
+		if (unlikely(s->state < sizeof(cl)))
 			return 0;
 
 		/* fall through */
@@ -146,31 +153,29 @@ static enum stream_result delim_write_stream_close(struct stream *gs,
 	struct delim_write_stream *s
 		= container_of(gs, struct delim_write_stream, base);
 	ssize_t res;
+	net_chunk_size_t cl = chunk_size_to_net(CHUNK_SIZE_END_BIT);
 
 	switch (s->state) {
 	case DELIM_STATE_START:
-		s->chunk_left = CHUNK_SIZE_END_BIT;
 		s->state = DELIM_STATE_FINAL_CHUNK_INTRO_0;
+		res = stream_write(s->underlying, &cl, sizeof(cl), t, err);
+		if (res < 0)
+			return res;
 
-		do {
-			res = stream_write(s->underlying, &s->chunk_left,
-					   sizeof(s->chunk_left), t, err);
-			if (res < 0)
-				return res;
+		s->state = DELIM_STATE_FINAL_CHUNK_INTRO_0 + res;
+		if ((size_t)res >= sizeof(cl)) {
+			s->delim_write->current = NULL;
+			return STREAM_OK;
+		}
 
-			s->state = DELIM_STATE_FINAL_CHUNK_INTRO_0 + res;
-		} while (unlikely((size_t)res < sizeof(s->chunk_left)));
-
-		s->delim_write->current = NULL;
-		return STREAM_OK;
+		/* fall through */
 
 	DELIM_STATE_FINAL_CHUNK_INTRO_CASES:
 		do {
 			chunk_size_t pos
 				= s->state - DELIM_STATE_FINAL_CHUNK_INTRO_0;
 			chunk_size_t len = DELIM_STATE_END - s->state;
-			res = stream_write(s->underlying,
-					   (char *)&s->chunk_left + pos, len,
+			res = stream_write(s->underlying, (char *)&cl + pos, len,
 					   t, err);
 			if (res < 0)
 				return res;
@@ -208,7 +213,10 @@ struct delim_read_stream {
 	struct delim_read *delim_read;
 	struct stream *underlying;
 	enum delim_state state;
-	chunk_size_t chunk_left;
+	union {
+		chunk_size_t h;
+		net_chunk_size_t n;
+	} chunk_left;
 	bool_t last_chunk;
 };
 
@@ -258,8 +266,8 @@ static ssize_t read_payload(struct delim_read_stream *s, void *buf,
 	ssize_t res = stream_read(s->underlying, buf, len, t, err);
 
 	if (res > 0) {
-		s->chunk_left -= res;
-		if (!s->chunk_left) {
+		s->chunk_left.h -= res;
+		if (!s->chunk_left.h) {
 			s->state = DELIM_STATE_START;
 			if (s->last_chunk) {
 				s->state = DELIM_STATE_END;
@@ -282,19 +290,20 @@ static ssize_t delim_read_stream_read(struct stream *gs, void *buf,
 	switch (s->state) {
 	case DELIM_STATE_START:
 		/* read the chunk intro */
-		res = stream_read(s->underlying, &s->chunk_left,
-				  sizeof(s->chunk_left), t, err);
+		res = stream_read(s->underlying, &s->chunk_left.n,
+				  sizeof(s->chunk_left.n), t, err);
 		if (res <= 0)
 			return res;
 
 		s->state = res;
-		if (unlikely((size_t)res < sizeof(s->chunk_left)))
+		if (unlikely((size_t)res < sizeof(s->chunk_left.n)))
 			return 0;
 
 	have_chunk_left:
-		if (s->chunk_left & CHUNK_SIZE_END_BIT) {
-			s->chunk_left &= ~CHUNK_SIZE_END_BIT;
-			if (!s->chunk_left) {
+		s->chunk_left.h = chunk_size_from_net(s->chunk_left.n);
+		if (s->chunk_left.h & CHUNK_SIZE_END_BIT) {
+			s->chunk_left.h &= ~CHUNK_SIZE_END_BIT;
+			if (!s->chunk_left.h) {
 				s->state = DELIM_STATE_END;
 				s->delim_read->current = NULL;
 				return STREAM_END;
@@ -306,20 +315,20 @@ static ssize_t delim_read_stream_read(struct stream *gs, void *buf,
 
 		/* fall through */
 	case DELIM_STATE_PAYLOAD:
-		if (len > s->chunk_left)
-			len = s->chunk_left;
+		if (len > s->chunk_left.h)
+			len = s->chunk_left.h;
 
 		return read_payload(s, buf, len, t, err);
 
 	DELIM_STATE_CHUNK_INTRO_CASES:
 		res = stream_read(s->underlying,
-				  (char *)&s->chunk_left + s->state,
-				  sizeof(s->chunk_left) - s->state, t, err);
+				  (char *)&s->chunk_left.n + s->state,
+				  sizeof(s->chunk_left.n) - s->state, t, err);
 		if (res <= 0)
 			return res;
 
 		s->state += res;
-		if (unlikely(s->state < sizeof(s->chunk_left)))
+		if (unlikely(s->state < sizeof(s->chunk_left.n)))
 			return 0;
 
 		goto have_chunk_left;

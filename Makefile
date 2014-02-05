@@ -39,7 +39,8 @@ HDRS=include/http-parser/http_parser.h include/skinny-mutex/skinny_mutex.h \
 	$(addprefix include/molerat/,base.h buffer.h thread.h tasklet.h \
 		application.h queue.h watched_fd.h stream.h socket.h \
 		echo_server.h http_reader.h http_status.h http_writer.h \
-		http_server.h delim_stream.h) src/poll.h test/stream_utils.h
+		http_server.h delim_stream.h endian.h) \
+	 src/poll.h test/stream_utils.h
 
 # Main exectuables that get built
 EXECUTABLES=echo_server http_status_gen http_server http_client
@@ -65,6 +66,7 @@ HDROBJS_$(ROOT)include/molerat/watched_fd.h=src/poll_poll.o
 HDROBJS_$(ROOT)include/molerat/timer.h=src/poll_poll.o
 endif
 
+HDROBJS_$(ROOT)include/molerat/endian.h=
 HDROBJS_$(ROOT)include/http-parser/http_parser.h=src/http-parser/http_parser.o
 HDROBJS_$(ROOT)include/skinny-mutex/skinny_mutex.h=src/skinny-mutex/skinny_mutex.o
 

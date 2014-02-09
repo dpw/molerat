@@ -4,6 +4,7 @@
 #define PRIVATE_SIGNAL SIGUSR1
 
 void application_prepare(void);
+void application_prepare_test(void);
 void application_assert_prepared(void);
 
 bool_t application_run(void);

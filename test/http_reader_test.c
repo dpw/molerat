@@ -240,7 +240,7 @@ static void do_http_reader_test(struct stream *stream)
 
 int main(void)
 {
-	application_prepare();
+	application_prepare_test();
 
 	do_http_reader_test(bytes_read_stream_create(c_string_bytes(test_data)));
 	do_http_reader_test(byte_at_a_time_stream_create(

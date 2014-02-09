@@ -6,6 +6,8 @@
 #include <molerat/application.h>
 
 static struct mutex app_mutex = MUTEX_INITIALIZER;
+static bool_t app_prepared;
+static bool_t sigint_blocked;
 static int app_running;
 static int app_runs;
 static int app_stops;
@@ -17,6 +19,20 @@ static void wakey_wakey(int sig)
 	(void)sig;
 }
 
+static void app_prepare(sigset_t *block)
+{
+	mutex_lock(&app_mutex);
+	assert(!app_prepared);
+	app_prepared = TRUE;
+	mutex_unlock(&app_mutex);
+
+	check_pthreads("pthread_sigmask",
+		       pthread_sigmask(SIG_BLOCK, block, NULL));
+
+	check_syscall("signal", signal(PRIVATE_SIGNAL, wakey_wakey) != SIG_ERR);
+	check_syscall("signal", signal(SIGPIPE, SIG_IGN) != SIG_ERR);
+}
+
 void application_prepare(void)
 {
 	sigset_t block;
@@ -24,25 +40,26 @@ void application_prepare(void)
 	sigemptyset(&block);
 	sigaddset(&block, PRIVATE_SIGNAL);
 	sigaddset(&block, SIGINT);
-	check_pthreads("pthread_sigmask",
-		       pthread_sigmask(SIG_BLOCK, &block, NULL));
 
-	check_syscall("signal", signal(PRIVATE_SIGNAL, wakey_wakey) != SIG_ERR);
-	check_syscall("signal", signal(SIGPIPE, SIG_IGN) != SIG_ERR);
+	app_prepare(&block);
+	sigint_blocked = TRUE;
+}
+
+void application_prepare_test(void)
+{
+	sigset_t block;
+
+	sigemptyset(&block);
+	sigaddset(&block, PRIVATE_SIGNAL);
+
+	app_prepare(&block);
 }
 
 void application_assert_prepared(void)
 {
-	sigset_t blocked;
-	struct sigaction sa;
-
-	check_pthreads("pthread_sigmask",
-		       pthread_sigmask(SIG_SETMASK, NULL, &blocked));
-	assert(sigismember(&blocked, PRIVATE_SIGNAL));
-	assert(sigismember(&blocked, SIGINT));
-
-	check_syscall("sigaction", !sigaction(PRIVATE_SIGNAL, NULL, &sa));
-	assert(sa.sa_handler == wakey_wakey);
+	mutex_lock(&app_mutex);
+	assert(app_prepared);
+	mutex_unlock(&app_mutex);
 }
 
 bool_t application_run(void)
@@ -54,7 +71,9 @@ bool_t application_run(void)
 
 	sigemptyset(&sigs);
 	sigaddset(&sigs, PRIVATE_SIGNAL);
-	sigaddset(&sigs, SIGINT);
+
+	if (sigint_blocked)
+		sigaddset(&sigs, SIGINT);
 
 	mutex_lock(&app_mutex);
 	run = app_runs++;

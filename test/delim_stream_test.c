@@ -215,7 +215,7 @@ int main(void)
 {
 	struct growbuf buf;
 
-	application_prepare();
+	application_prepare_test();
 
 	growbuf_init(&buf, 100);
 	do_write_test(growbuf_write_stream_create(&buf));

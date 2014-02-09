@@ -98,7 +98,7 @@ static void timer_test(void)
 
 int main(void)
 {
-	application_prepare();
+	application_prepare_test();
 	timer_test();
 	return 0;
 }

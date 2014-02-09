@@ -125,7 +125,7 @@ static void http_reader_test(void *v_t)
 		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
 		if (pres == HTTP_READER_PREBODY_WAITING
 		    || pres == HTTP_READER_PREBODY_PROGRESS)
-			goto out;
+			return;
 
 		assert(pres == HTTP_READER_PREBODY_DONE);
 		assert(http_reader_method(&t->reader) == HTTP_GET);
@@ -138,7 +138,7 @@ static void http_reader_test(void *v_t)
 		res = http_reader_body(&t->reader, t->buf, 1, &t->tasklet,
 				       &t->err);
 		if (res == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(res == STREAM_END);
 
@@ -147,7 +147,7 @@ static void http_reader_test(void *v_t)
 		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
 		if (pres == HTTP_READER_PREBODY_WAITING
 		    || pres == HTTP_READER_PREBODY_PROGRESS)
-			goto out;
+			return;
 
 		assert(pres == HTTP_READER_PREBODY_DONE);
 		assert(http_reader_method(&t->reader) == HTTP_POST);
@@ -161,7 +161,7 @@ static void http_reader_test(void *v_t)
 		res = http_reader_body(&t->reader, t->buf, 0, &t->tasklet,
 				       &t->err);
 		if (res == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(res == 0);
 
@@ -169,7 +169,7 @@ static void http_reader_test(void *v_t)
 	STEP:
 		res = read_body(t, 14);
 		if (res == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(res == 13);
 		assert(!memcmp(t->buf, "hello, world!", 13));
@@ -179,7 +179,7 @@ static void http_reader_test(void *v_t)
 		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
 		if (pres == HTTP_READER_PREBODY_WAITING
 		    || pres == HTTP_READER_PREBODY_PROGRESS)
-			goto out;
+			return;
 
 		assert(pres == HTTP_READER_PREBODY_DONE);
 		assert(http_reader_method(&t->reader) == HTTP_GET);
@@ -193,7 +193,7 @@ static void http_reader_test(void *v_t)
 		res = http_reader_body(&t->reader, t->buf, 1, &t->tasklet,
 				       &t->err);
 		if (res == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(res == STREAM_END);
 
@@ -202,7 +202,7 @@ static void http_reader_test(void *v_t)
 		pres = http_reader_prebody(&t->reader, &t->tasklet, &t->err);
 		if (pres == HTTP_READER_PREBODY_WAITING
 		    || pres == HTTP_READER_PREBODY_PROGRESS)
-			goto out;
+			return;
 
 		assert(pres == HTTP_READER_PREBODY_CLOSED);
 	}
@@ -211,9 +211,6 @@ static void http_reader_test(void *v_t)
 
 	tasklet_stop(&t->tasklet);
 	application_stop();
-
- out:
-	mutex_unlock(&t->mutex);
 }
 
 static void do_http_reader_test(struct stream *stream)
@@ -228,9 +225,11 @@ static void do_http_reader_test(struct stream *stream)
 
 	mutex_lock(&t.mutex);
 	tasklet_goto(&t.tasklet, http_reader_test);
-	application_run();
 
+	mutex_unlock(&t.mutex);
+	application_run();
 	mutex_lock(&t.mutex);
+
 	error_fini(&t.err);
 	tasklet_fini(&t.tasklet);
 	mutex_unlock_fini(&t.mutex);

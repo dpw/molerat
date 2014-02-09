@@ -41,7 +41,7 @@ void tester_write(void *v_t)
 	for (;;) {
 		if (t->write_pos == t->write_len) {
 			socket_close_write(t->socket, &t->write_err);
-			break;
+			goto done;
 		}
 
 		switch (res = socket_write(t->socket,
@@ -49,19 +49,17 @@ void tester_write(void *v_t)
 					   t->write_len - t->write_pos,
 					   &t->write_tasklet, &t->write_err)) {
 		case STREAM_WAITING:
-			goto waiting;
+			return;
 
 		case STREAM_ERROR:
-			goto error;
+			goto done;
 		}
 
 		t->write_pos += res;
 	}
 
- error:
+ done:
 	tester_stop_1(t, &t->write_tasklet);
- waiting:
-	mutex_unlock(&t->mutex);
 }
 
 void tester_read(void *v_t)
@@ -79,20 +77,16 @@ void tester_read(void *v_t)
 					  t->read_capacity - t->read_pos,
 					  &t->read_tasklet, &t->read_err)) {
 		case STREAM_WAITING:
-			goto waiting;
+			return;
 
 		case STREAM_END:
 		case STREAM_ERROR:
-			goto done;
+			tester_stop_1(t, &t->read_tasklet);
+			return;
 		}
 
 		t->read_pos += res;
 	}
-
- done:
-	tester_stop_1(t, &t->read_tasklet);
- waiting:
-	mutex_unlock(&t->mutex);
 }
 
 struct tester *tester_create(struct socket *s)
@@ -116,9 +110,8 @@ struct tester *tester_create(struct socket *s)
 
 	mutex_lock(&t->mutex);
 	tasklet_goto(&t->write_tasklet, tester_write);
-
-	mutex_lock(&t->mutex);
 	tasklet_goto(&t->read_tasklet, tester_read);
+	mutex_unlock(&t->mutex);
 
 	return t;
 }

@@ -448,6 +448,7 @@ static struct client_socket *client_socket_create(
 	mutex_lock(&s->base.mutex);
 	start_connecting(c);
 	tasklet_goto(&c->tasklet, finish_connecting);
+	mutex_unlock(&s->base.mutex);
 
 	return s;
 }
@@ -526,14 +527,16 @@ static void finish_connecting(void *v_c)
 
 	for (;;) {
 		if (!wait_list_down(&c->connecting, 1, &c->tasklet))
-			break;
+			return;
 
 		if (c->connected) {
 			int fd = c->fd;
 			struct watched_fd *watched_fd = c->watched_fd;
 			c->fd = -1;
+
 			connector_destroy(c);
 			s->connector = NULL;
+
 			simple_socket_set_fd(&s->base, fd, watched_fd);
 
 			/* Access to the ops pointer is not locked.
@@ -541,7 +544,10 @@ static void finish_connecting(void *v_c)
 			 * use the old client_socket_ops value. */
 			s->base.base.ops = &simple_socket_ops;
 
-			break;
+			/* Tasklet got destroyed, so we are still
+			   holding the associated lock. */
+			mutex_unlock(&s->base.mutex);
+			return;
 		}
 		else {
 			/* Got POLLERR */
@@ -566,8 +572,6 @@ static void finish_connecting(void *v_c)
 			}
 		}
 	}
-
-	mutex_unlock(&s->base.mutex);
 }
 
 static void connector_handle_events(void *v_c, poll_events_t events)

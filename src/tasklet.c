@@ -111,7 +111,6 @@ static void stop_worker(void *v_worker)
 	struct worker *w = v_worker;
 	w->runq = NULL;
 	tasklet_stop(&w->tasklet);
-	mutex_unlock(&w->mutex);
 }
 
 static void worker_destroy(struct worker *w)
@@ -229,8 +228,10 @@ void tasklet_run(struct tasklet *t)
 			mutex_lock(&runq->mutex);
 
 			if (t->runq == runq) {
-				if (runq->current == t)
+				if (runq->current == t) {
+					runq->current_stopped = FALSE;
 					runq->current_requeue = TRUE;
+				}
 
 				done = TRUE;
 			}
@@ -516,38 +517,46 @@ void run_queue_run(struct run_queue *runq, int wait)
 	do {
 		run_queue_remove(runq, t);
 		runq->current = t;
-		runq->current_requeue = runq->current_stopped = FALSE;
 		t->waited = FALSE;
 
-		/* mutex_transfer can fail because of a veto aimed at
-		   a tasket on another run queue but using the same
-		   mutex.  So we have to check that the current
-		   tasklet was really stopped. */
-		do {
-			if (mutex_transfer(&runq->mutex, t->mutex)) {
-				t->handler(t->data);
-				mutex_lock(&runq->mutex);
+		for (;;) {
+			runq->current_requeue = runq->current_stopped = FALSE;
+			if (mutex_transfer(&runq->mutex, t->mutex))
 				break;
-			}
-		} while (!runq->current_stopped);
 
-		if (runq->current == t) {
-			if (!runq->current_requeue) {
-				/* Detect dangling tasklets that are
-				   not on a waitlist and were not
-				   explicitly stopped. */
-				if (!runq->current_stopped) {
-					assert(t->waited);
-					assert(t->wait);
-				}
-
-				t->runq = NULL;
-			}
-			else {
-				run_queue_enqueue(runq, t);
-			}
+			/* mutex_transfer can fail because of a veto
+			   aimed at a tasket on another run queue but
+			   using the same mutex.  So we have to check
+			   that the current tasklet was really
+			   stopped. */
+			if (runq->current_stopped)
+				goto next;
 		}
 
+		t->handler(t->data);
+
+		mutex_lock(&runq->mutex);
+		if (runq->current != t)
+			/* tasklet was destroyed */
+			goto next;
+
+		mutex_unlock(t->mutex);
+		if (!runq->current_requeue) {
+			/* Detect dangling tasklets that are not on a
+			   waitlist and were not explicitly
+			   stopped. */
+			if (!runq->current_stopped) {
+				assert(t->waited);
+				assert(t->wait);
+			}
+
+			t->runq = NULL;
+		}
+		else {
+			run_queue_enqueue(runq, t);
+		}
+
+	next:
 		if (runq->stop_waiting) {
 			runq->stop_waiting = FALSE;
 			cond_broadcast(&runq->cond);
@@ -621,20 +630,24 @@ void tasklet_fini(struct tasklet *t)
 				run_queue_remove(runq, t);
 				t->runq = NULL;
 			}
-			else if (pthread_self() == runq->thread) {
-				runq->current = NULL;
-			}
 			else {
-				mutex_veto_transfer(t->mutex);
-
-				/* Wait until the tasklet is done */
 				runq->current_requeue = FALSE;
 				runq->current_stopped = TRUE;
-				runq->stop_waiting = TRUE;
 
-				do
-					cond_wait(&runq->cond, &runq->mutex);
-				while (runq->current == t);
+				if (pthread_self() == runq->thread) {
+					runq->current = NULL;
+				}
+				else {
+					mutex_veto_transfer(t->mutex);
+
+					/* Wait until the tasklet is done */
+					runq->stop_waiting = TRUE;
+
+					do
+						cond_wait(&runq->cond,
+							  &runq->mutex);
+					while (runq->current == t);
+				}
 			}
 
 			mutex_unlock(&runq->mutex);

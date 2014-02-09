@@ -35,7 +35,6 @@ static struct test *test_create(unsigned int queue_size)
 
 static void test_destroy(struct test *t)
 {
-	mutex_lock(&t->mutex);
 	tasklet_fini(&t->producer);
 	tasklet_fini(&t->consumer);
 	queue_fini(&t->queue);
@@ -54,7 +53,6 @@ static void producer(void *v_t)
 		if (!queue_push(&t->queue, item, &t->producer)) {
 			t->producer_blocked = TRUE;
 			cond_broadcast(&t->cond);
-			mutex_unlock(&t->mutex);
 			free(item);
 			return;
 		}
@@ -65,7 +63,6 @@ static void producer(void *v_t)
 		if (t->producer_count == 200) {
 			cond_broadcast(&t->cond);
 			tasklet_stop(&t->producer);
-			mutex_unlock(&t->mutex);
 			return;
 		}
 	}
@@ -80,7 +77,6 @@ static void consumer(void *v_t)
 		if (!item) {
 			t->consumer_blocked = TRUE;
 			cond_broadcast(&t->cond);
-			mutex_unlock(&t->mutex);
 			return;
 		}
 
@@ -129,7 +125,6 @@ int main(void)
 
 	assert(t->consumer_count == t->producer_count);
 
-	mutex_unlock(&t->mutex);
 	test_destroy(t);
 	return 0;
 }

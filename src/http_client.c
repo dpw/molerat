@@ -36,6 +36,8 @@ struct http_client *http_client_create(struct socket *s, const char *host)
 
 	mutex_lock(&c->mutex);
 	tasklet_goto(&c->tasklet, write_request);
+	mutex_unlock(&c->mutex);
+
 	return c;
 }
 
@@ -60,7 +62,7 @@ static void write_request(void *v_c)
 		goto error;
 
 	case HTTP_WRITER_END_WAITING:
-		goto out;
+		return;
 
 	case HTTP_WRITER_END_DONE:
 		if (!socket_close_write(c->socket, &c->err))
@@ -74,8 +76,6 @@ static void write_request(void *v_c)
 	fprintf(stderr, "Error: %s\n", error_message(&c->err));
 	tasklet_stop(&c->tasklet);
 	application_stop();
- out:
-	mutex_unlock(&c->mutex);
 }
 
 static void read_response_prebody(void *v_c)
@@ -85,7 +85,7 @@ static void read_response_prebody(void *v_c)
 	switch (http_reader_prebody(&c->reader, &c->tasklet, &c->err)) {
 	case HTTP_READER_PREBODY_WAITING:
 	case HTTP_READER_PREBODY_PROGRESS:
-		goto out;
+		return;
 
 	case HTTP_READER_PREBODY_DONE:
 		tasklet_goto(&c->tasklet, read_response_body);
@@ -104,7 +104,7 @@ static void read_response_prebody(void *v_c)
 		goto stop;
 
 	case STREAM_WAITING:
-		goto out;
+		return;
 
 	default:
 		break;
@@ -116,9 +116,6 @@ static void read_response_prebody(void *v_c)
  stop:
 	tasklet_stop(&c->tasklet);
 	application_stop();
-
- out:
-	mutex_unlock(&c->mutex);
 }
 
 static void read_response_body(void *v_c)
@@ -131,7 +128,6 @@ static void read_response_body(void *v_c)
 					       &c->tasklet, &c->err);
 		switch (res) {
 		case STREAM_WAITING:
-			mutex_unlock(&c->mutex);
 			return;
 
 		case STREAM_ERROR:
@@ -150,7 +146,6 @@ static void read_response_body(void *v_c)
  done:
 	tasklet_stop(&c->tasklet);
 	application_stop();
-	mutex_unlock(&c->mutex);
 }
 
 int main(int argc, char **argv)

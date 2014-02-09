@@ -32,6 +32,7 @@ static struct echoer *echoer_create(struct socket *s, bool_t verbose)
 
 	mutex_lock(&e->mutex);
 	tasklet_goto(&e->tasklet, echoer_echo);
+	mutex_unlock(&e->mutex);
 
 	return e;
 }
@@ -59,7 +60,7 @@ static void echoer_echo(void *v_e)
 			switch (res = socket_read(e->socket, e->buf, BUF_SIZE,
 						  &e->tasklet, &e->err)) {
 			case STREAM_WAITING:
-				goto waiting;
+				return;
 
 			case STREAM_END:
 				tasklet_goto(&e->tasklet, echoer_close);
@@ -76,7 +77,7 @@ static void echoer_echo(void *v_e)
 		switch (res = socket_write(e->socket, e->buf + e->pos,
 				       e->len - e->pos, &e->tasklet, &e->err)) {
 		case STREAM_WAITING:
-			goto waiting;
+			return;
 
 		case STREAM_ERROR:
 			goto error;
@@ -84,10 +85,6 @@ static void echoer_echo(void *v_e)
 
 		e->pos += res;
 	}
-
- waiting:
-	mutex_unlock(&e->mutex);
-	return;
 
  error:
 	echoer_destroy(e);
@@ -99,7 +96,6 @@ static void echoer_close(void *v_e)
 
 	switch (socket_close(e->socket, &e->tasklet, &e->err)) {
 	case STREAM_WAITING:
-		mutex_unlock(&e->mutex);
 		return;
 
 	case STREAM_OK:
@@ -164,7 +160,6 @@ static void echo_server_accept(void *v_es)
 	if (!error_ok(&err))
 		fprintf(stderr, "%s\n", error_message(&err));
 
-	mutex_unlock(&es->mutex);
 	error_fini(&err);
 }
 
@@ -179,6 +174,7 @@ struct echo_server *echo_server_create(struct server_socket *s,
 
 	mutex_lock(&es->mutex);
 	tasklet_goto(&es->tasklet, echo_server_accept);
+	mutex_unlock(&es->mutex);
 
 	return es;
 }

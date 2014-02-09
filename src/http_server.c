@@ -56,6 +56,7 @@ struct http_server *http_server_create(struct server_socket *s,
 
 	mutex_lock(&hs->mutex);
 	tasklet_goto(&hs->tasklet, http_server_accept);
+	mutex_unlock(&hs->mutex);
 
 	return hs;
 }
@@ -162,7 +163,6 @@ static void http_server_accept(void *v_hs)
 	if (!error_ok(&err))
 		fprintf(stderr, "%s\n", error_message(&err));
 
-	mutex_unlock(&hs->mutex);
 	error_fini(&err);
 }
 
@@ -196,6 +196,7 @@ static struct connection *connection_create(struct http_server *server,
 	tasklet_later(&conn->tasklet, connection_read_prebody);
 	mutex_lock(&conn->mutex);
 	tasklet_goto(&conn->timeout_tasklet, connection_timeout);
+	mutex_unlock(&conn->mutex);
 
 	return conn;
 }
@@ -240,7 +241,7 @@ static void connection_read_prebody(void *v_c)
 		/* Fall through */
 
 	case HTTP_READER_PREBODY_WAITING:
-		goto wait;
+		return;
 
 	case HTTP_READER_PREBODY_DONE:
 		dump_headers(&c->reader);
@@ -260,7 +261,7 @@ static void connection_read_prebody(void *v_c)
 		goto stop;
 
 	case STREAM_WAITING:
-		goto wait;
+		return;
 
 	default:
 		break;
@@ -271,10 +272,6 @@ static void connection_read_prebody(void *v_c)
 
  stop:
 	connection_destroy_locked(c);
-	return;
-
- wait:
-	mutex_unlock(&c->mutex);
 }
 
 static void connection_read_body(void *v_c)
@@ -287,7 +284,6 @@ static void connection_read_body(void *v_c)
 					       &c->tasklet, &c->err);
 		switch (res) {
 		case STREAM_WAITING:
-			mutex_unlock(&c->mutex);
 			return;
 
 		case STREAM_ERROR:
@@ -340,7 +336,6 @@ static void connection_write(void *v_c)
 						&c->tasklet, &c->err);
 		switch (res) {
 		case STREAM_WAITING:
-			mutex_unlock(&c->mutex);
 			return;
 
 		case STREAM_ERROR:
@@ -357,17 +352,14 @@ static void connection_write(void *v_c)
 	}
 
 	tasklet_later(&c->tasklet, connection_read_prebody);
-	mutex_unlock(&c->mutex);
 }
 
 static void connection_timeout(void *v_c)
 {
 	struct connection *c = v_c;
 
-	if (!timer_wait(&c->timeout, &c->timeout_tasklet)) {
-		mutex_unlock(&c->mutex);
+	if (!timer_wait(&c->timeout, &c->timeout_tasklet))
 		return;
-	}
 
 	fprintf(stderr, "Closing connection due to timeout\n");
 	connection_destroy_locked(c);

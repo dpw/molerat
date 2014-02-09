@@ -49,14 +49,14 @@ static void write_test(void *v_t)
 	STEP:
 		sres = write_some(t, "hello, ", 7);
 		if (sres == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(sres == STREAM_OK);
 
 	STEP:
 		sres = stream_close(t->stream, &t->tasklet, &t->err);
 		if (sres == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(sres == STREAM_OK);
 		stream_destroy(t->stream);
@@ -66,14 +66,14 @@ static void write_test(void *v_t)
 	STEP:
 		sres = write_some(t, "world!", 6);
 		if (sres == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(sres == STREAM_OK);
 
 	STEP:
 		sres = stream_close(t->stream, &t->tasklet, &t->err);
 		if (sres == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(sres == STREAM_OK);
 		stream_destroy(t->stream);
@@ -81,9 +81,6 @@ static void write_test(void *v_t)
 
 	tasklet_stop(&t->tasklet);
 	application_stop();
-
- out:
-	mutex_unlock(&t->mutex);
 }
 
 static void do_write_test(struct stream *stream)
@@ -98,9 +95,11 @@ static void do_write_test(struct stream *stream)
 
 	mutex_lock(&t.mutex);
 	tasklet_goto(&t.tasklet, write_test);
-	application_run();
 
+	mutex_unlock(&t.mutex);
+	application_run();
 	mutex_lock(&t.mutex);
+
 	delim_write_destroy(t.dw);
 	error_fini(&t.err);
 	tasklet_fini(&t.tasklet);
@@ -150,7 +149,7 @@ static void read_test(void *v_t)
 	STEP:
 		res = read_some(t, 8);
 		if (res == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(res == 7);
 		assert(!memcmp(t->buf, "hello, ", 7));
@@ -158,7 +157,7 @@ static void read_test(void *v_t)
 	STEP:
 		sres = stream_close(t->stream, &t->tasklet, &t->err);
 		if (sres == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(sres == STREAM_OK);
 		stream_destroy(t->stream);
@@ -168,7 +167,7 @@ static void read_test(void *v_t)
 	STEP:
 		res = read_some(t, 7);
 		if (res == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(res == 6);
 		assert(!memcmp(t->buf, "world!", 6));
@@ -176,7 +175,7 @@ static void read_test(void *v_t)
 	STEP:
 		sres = stream_close(t->stream, &t->tasklet, &t->err);
 		if (sres == STREAM_WAITING)
-			goto out;
+			return;
 
 		assert(sres == STREAM_OK);
 		stream_destroy(t->stream);
@@ -184,9 +183,6 @@ static void read_test(void *v_t)
 
 	tasklet_stop(&t->tasklet);
 	application_stop();
-
- out:
-	mutex_unlock(&t->mutex);
 }
 
 static void do_read_test(struct stream *stream)
@@ -201,9 +197,11 @@ static void do_read_test(struct stream *stream)
 
 	mutex_lock(&t.mutex);
 	tasklet_goto(&t.tasklet, read_test);
-	application_run();
 
+	mutex_unlock(&t.mutex);
+	application_run();
 	mutex_lock(&t.mutex);
+
 	delim_read_destroy(t.dr);
 	error_fini(&t.err);
 	tasklet_fini(&t.tasklet);

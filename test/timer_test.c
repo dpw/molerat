@@ -29,7 +29,7 @@ static void timer_test_tasklet(void *v_t)
 	struct t *other;
 
 	if (!timer_wait(&t->timer, &t->tasklet))
-		goto out;
+		return;
 
 	assert(!t->done);
 	t->done = TRUE;
@@ -56,9 +56,6 @@ static void timer_test_tasklet(void *v_t)
 	if (!(t->parent->remaining -= delta))
 		/* All timers have fired or been cancelled */
 		application_stop();
-
- out:
-	mutex_unlock(&t->parent->mutex);
 }
 
 static void timer_test(void)

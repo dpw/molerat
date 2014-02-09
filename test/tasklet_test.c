@@ -13,8 +13,6 @@ void test_tasklet_wait(void *v_tt)
 
 	while (wait_list_down(tt->sema, 1, &tt->tasklet))
 		tt->got++;
-
-	mutex_unlock(&tt->mutex);
 }
 
 struct test_tasklet *test_tasklet_create(struct wait_list *sema)
@@ -28,6 +26,7 @@ struct test_tasklet *test_tasklet_create(struct wait_list *sema)
 
 	mutex_lock(&tt->mutex);
 	tasklet_goto(&tt->tasklet, test_tasklet_wait);
+	mutex_unlock(&tt->mutex);
 
 	return tt;
 }

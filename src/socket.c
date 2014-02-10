@@ -562,7 +562,7 @@ static void finish_connecting(void *v_c)
 
 			if (e) {
 				/* Stash the error and try another address */
-				error_errno_val(&c->err, e, syscall);
+				error_errno_val(&c->err, e, "%s", syscall);
 				start_connecting(c);
 			}
 			/* Strange, no error.  Continue to poll. */
@@ -991,7 +991,7 @@ static int make_bound_socket(struct addrinfo *ai, struct error *err)
 	return fd;
 
  error:
-	error_errno(err, op);
+	error_errno(err, "%s", op);
 	close(fd);
  out:
 	return -1;

@@ -11,6 +11,9 @@ MAKEFILE:=$(firstword $(MAKEFILE_LIST))
 # You can override this from the command line
 CFLAGS=-Wall -Wextra -Werror -ansi -g
 
+# clang doesn't like the use of '-ansi' when linking
+LD_CFLAGS=$(filter-out -ansi,$(CFLAGS))
+
 # ROOT is the path to the source tree.  If non-empty, then it includes
 # a trailing slash.
 ROOT=$(filter-out ./,$(dir $(MAKEFILE)))
@@ -134,7 +137,7 @@ define build_executable
 build_executable_objneeds_$(1):=$(call objneeds,$(or $(MAINOBJ_$(1)),$(2)$(1).o))
 ifeq "$$(filter undefined,$$(build_executable_objneeds_$(1)))" ""
 $(1): $$(filter-out -pthread,$$(build_executable_objneeds_$(1)))
-	$$(CC) $$(CFLAGS) $(PROJECT_CFLAGS) $$(build_executable_objneeds_$(1)) -o $$@
+	$$(CC) $$(LD_CFLAGS) $(PROJECT_CFLAGS) $$(build_executable_objneeds_$(1)) -o $$@
 else
 $(1):
 	@false

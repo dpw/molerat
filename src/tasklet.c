@@ -18,8 +18,11 @@ struct run_queue {
 	struct mutex mutex;
 	struct tasklet *head;
 	struct tasklet *current;
-	bool_t current_stopped;
-	bool_t current_requeue;
+	enum {
+		CURRENT_STARTED,
+		CURRENT_STOPPED,
+		CURRENT_REQUEUE
+	} current_state;
 
 	bool_t stop_waiting;
 	bool_t worker_waiting;
@@ -228,10 +231,8 @@ void tasklet_run(struct tasklet *t)
 			mutex_lock(&runq->mutex);
 
 			if (t->runq == runq) {
-				if (runq->current == t) {
-					runq->current_stopped = FALSE;
-					runq->current_requeue = TRUE;
-				}
+				if (runq->current == t)
+					runq->current_state = CURRENT_REQUEUE;
 
 				done = TRUE;
 			}
@@ -520,7 +521,7 @@ void run_queue_run(struct run_queue *runq, int wait)
 		t->waited = FALSE;
 
 		for (;;) {
-			runq->current_requeue = runq->current_stopped = FALSE;
+			runq->current_state = CURRENT_STARTED;
 			if (mutex_transfer(&runq->mutex, t->mutex))
 				break;
 
@@ -529,7 +530,7 @@ void run_queue_run(struct run_queue *runq, int wait)
 			   using the same mutex.  So we have to check
 			   that the current tasklet was really
 			   stopped. */
-			if (runq->current_stopped)
+			if (runq->current_state == CURRENT_STOPPED)
 				goto next;
 		}
 
@@ -541,18 +542,20 @@ void run_queue_run(struct run_queue *runq, int wait)
 			goto next;
 
 		mutex_unlock(t->mutex);
-		if (!runq->current_requeue) {
+		switch (runq->current_state) {
+		case CURRENT_STARTED:
 			/* Detect dangling tasklets that are not on a
 			   waitlist and were not explicitly
 			   stopped. */
-			if (!runq->current_stopped) {
-				assert(t->waited);
-				assert(t->wait);
-			}
+			assert(t->waited);
+			assert(t->wait);
 
+			/* fall through */
+		case CURRENT_STOPPED:
 			t->runq = NULL;
-		}
-		else {
+			break;
+
+		case CURRENT_REQUEUE:
 			run_queue_enqueue(runq, t);
 		}
 
@@ -589,8 +592,7 @@ void tasklet_stop(struct tasklet *t)
 				t->runq = NULL;
 			}
 			else {
-				runq->current_requeue = FALSE;
-				runq->current_stopped = TRUE;
+				runq->current_state = CURRENT_STOPPED;
 
 				if (pthread_self() != runq->thread) {
 					mutex_veto_transfer(t->mutex);
@@ -631,8 +633,7 @@ void tasklet_fini(struct tasklet *t)
 				t->runq = NULL;
 			}
 			else {
-				runq->current_requeue = FALSE;
-				runq->current_stopped = TRUE;
+				runq->current_state = CURRENT_STOPPED;
 
 				if (pthread_self() == runq->thread) {
 					runq->current = NULL;

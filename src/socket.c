@@ -410,6 +410,7 @@ struct connector {
 	int connected;
 	struct addrinfo *next_addrinfo;
 	struct addrinfo *addrinfos;
+	void (*fai)(struct addrinfo *s); /* the freeaddrinfo function to use */
 	struct error err;
 };
 
@@ -425,8 +426,8 @@ static void start_connecting(struct connector *c);
 static void finish_connecting(void *v_c);
 
 static struct client_socket *client_socket_create(
-						struct addrinfo *next_addrinfo,
-						struct addrinfo *addrinfos)
+					      struct addrinfo *addrinfos,
+					      void (*fai)(struct addrinfo *))
 {
 	struct connector *c = xalloc(sizeof *c);
 	struct client_socket *s = xalloc(sizeof *s);
@@ -437,8 +438,8 @@ static struct client_socket *client_socket_create(
 	wait_list_init(&c->connecting, 0);
 	c->fd = -1;
 	c->connected = 0;
-	c->next_addrinfo = next_addrinfo;
-	c->addrinfos = addrinfos;
+	c->next_addrinfo = c->addrinfos = addrinfos;
+	c->fai = fai;
 	error_init(&c->err);
 
 	simple_socket_init(&s->base, &client_socket_ops, -1);
@@ -468,10 +469,7 @@ static void connector_destroy(struct connector *c)
 	wait_list_fini(&c->connecting);
 	tasklet_fini(&c->tasklet);
 	error_fini(&c->err);
-
-	if (c->addrinfos)
-		freeaddrinfo(c->addrinfos);
-
+	c->fai(c->addrinfos);
 	free(c);
 }
 
@@ -885,24 +883,55 @@ static struct server_socket_ops simple_server_socket_ops = {
 
 static struct socket_factory_ops simple_socket_factory_ops;
 
+static void our_freeaddrinfo(struct addrinfo *ai)
+{
+	while (ai) {
+		struct addrinfo *next = ai->ai_next;
+		free(ai->ai_addr);
+		free(ai);
+		ai = next;
+	}
+}
+
 static struct socket *connect_address(struct socket_factory *gf,
-				      struct sockaddr *sa,
+				      struct sockaddr **addrs,
 				      struct error *err)
 {
-	struct addrinfo ai;
+	struct sockaddr *addr;
+	struct addrinfo *ai;
+	struct addrinfo *addrinfos;
+	struct addrinfo **next = &addrinfos;
 
 	assert(gf->ops == &simple_socket_factory_ops);
 
-	ai.ai_next = NULL;
-	ai.ai_family = sa->sa_family;
-	ai.ai_socktype = SOCK_STREAM;
-	ai.ai_protocol = 0;
-	ai.ai_addr = sa;
-	ai.ai_addrlen = sockaddr_len(sa, err);
-	if (!ai.ai_addrlen)
-		return NULL;
+	while ((addr = *addrs++)) {
+		ai = xalloc(sizeof *ai);
+		ai->ai_next = NULL;
+		ai->ai_family = addr->sa_family;
+		ai->ai_socktype = SOCK_STREAM;
+		ai->ai_protocol = 0;
+		ai->ai_addr = NULL;
+		ai->ai_addrlen = sockaddr_len(addr, err);
+		if (!ai->ai_addrlen)
+			goto error;
 
-	return &client_socket_create(&ai, NULL)->base.base;
+		ai->ai_addr = xalloc(ai->ai_addrlen);
+		memcpy(ai->ai_addr, addr, ai->ai_addrlen);
+
+		*next = ai;
+		next = &ai->ai_next;
+	}
+
+	if (addrinfos)
+		return &client_socket_create(addrinfos,
+					     our_freeaddrinfo)->base.base;
+
+	error_set(err, ERROR_INVALID, "no addresses to connect to");
+	return NULL;
+
+ error:
+	our_freeaddrinfo(addrinfos);
+	return NULL;
 }
 
 static struct socket *sf_connect(struct socket_factory *gf,
@@ -924,13 +953,14 @@ static struct socket *sf_connect(struct socket_factory *gf,
 	hints.ai_socktype = SOCK_STREAM;
 
 	res = getaddrinfo(host, service, &hints, &ai);
-	if (res) {
-		error_set(err, ERROR_OS, "resolving network address: %s",
-			  gai_strerror(res));
-		return NULL;
-	}
+	if (!res)
+		/* SuS says "The list shall include at least one
+		 * addrinfo structure", so no need to check ai */
+		return &client_socket_create(ai, freeaddrinfo)->base.base;
 
-	return &client_socket_create(ai, ai)->base.base;
+	error_set(err, ERROR_OS, "resolving network address %s:%s: %s",
+		  host, service, gai_strerror(res));
+	return NULL;
 }
 
 static int make_listening_socket(int family, int socktype, struct error *err)

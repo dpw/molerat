@@ -116,9 +116,9 @@ struct socket_factory_ops {
 	struct socket *(*connect)(struct socket_factory *f,
 				  const char *host, const char *service,
 				  struct error *e);
-	struct socket *(*connect_address)(struct socket_factory *f,
-					  struct sockaddr *sa,
-					  struct error *e);
+	struct socket *(*connect_addresses)(struct socket_factory *f,
+					    struct sockaddr **addrs,
+					    struct error *e);
 	struct server_socket *(*unbound_server_socket)(struct socket_factory *f,
 						       struct error *e);
 	struct server_socket *(*bound_server_socket)(struct socket_factory *f,
@@ -135,10 +135,10 @@ static inline struct socket *socket_factory_connect(struct socket_factory *f,
 	return f->ops->connect(f, host, service, e);
 }
 
-static inline struct socket *socket_factory_connect_address(
-		 struct socket_factory *f, struct sockaddr *sa, struct error *e)
+static inline struct socket *socket_factory_connect_addresses(
+	     struct socket_factory *f, struct sockaddr **addrs, struct error *e)
 {
-	return f->ops->connect_address(f, sa, e);
+	return f->ops->connect_addresses(f, addrs, e);
 }
 
 static inline struct server_socket *socket_factory_unbound_server_socket(

@@ -173,7 +173,7 @@ static void test_echo_direct(void)
 	sas = echo_server_addresses(es, &err);
 	check_error(&err);
 
-	s = socket_factory_connect_address(sf, sas[0], &err);
+	s = socket_factory_connect_addresses(sf, sas, &err);
 	check_error(&err);
 
 	test_echo_server(es, s);

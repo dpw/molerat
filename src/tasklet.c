@@ -26,7 +26,7 @@ struct run_queue {
 
 	bool_t stop_waiting;
 	bool_t worker_waiting;
-	pthread_t thread;
+	thread_handle_t thread;
 	struct cond cond;
 };
 
@@ -513,7 +513,7 @@ void run_queue_run(struct run_queue *runq, int wait)
 		runq->worker_waiting = FALSE;
 	}
 
-	runq->thread = pthread_self();
+	runq->thread = thread_handle_current();
 
 	do {
 		run_queue_remove(runq, t);
@@ -594,7 +594,7 @@ void tasklet_stop(struct tasklet *t)
 			else {
 				runq->current_state = CURRENT_STOPPED;
 
-				if (pthread_self() != runq->thread) {
+				if (thread_handle_current() != runq->thread) {
 					mutex_veto_transfer(t->mutex);
 
 					/* Wait until the tasklet is done */
@@ -635,7 +635,7 @@ void tasklet_fini(struct tasklet *t)
 			else {
 				runq->current_state = CURRENT_STOPPED;
 
-				if (pthread_self() == runq->thread) {
+				if (thread_handle_current() == runq->thread) {
 					runq->current = NULL;
 				}
 				else {

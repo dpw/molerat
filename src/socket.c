@@ -893,9 +893,9 @@ static void our_freeaddrinfo(struct addrinfo *ai)
 	}
 }
 
-static struct socket *connect_address(struct socket_factory *gf,
-				      struct sockaddr **addrs,
-				      struct error *err)
+static struct socket *connect_addresses(struct socket_factory *gf,
+					struct sockaddr **addrs,
+					struct error *err)
 {
 	struct sockaddr *addr;
 	struct addrinfo *ai;
@@ -912,14 +912,15 @@ static struct socket *connect_address(struct socket_factory *gf,
 		ai->ai_protocol = 0;
 		ai->ai_addr = NULL;
 		ai->ai_addrlen = sockaddr_len(addr, err);
+
+		*next = ai;
+		next = &ai->ai_next;
+
 		if (!ai->ai_addrlen)
 			goto error;
 
 		ai->ai_addr = xalloc(ai->ai_addrlen);
 		memcpy(ai->ai_addr, addr, ai->ai_addrlen);
-
-		*next = ai;
-		next = &ai->ai_next;
 	}
 
 	if (addrinfos)
@@ -1090,7 +1091,7 @@ static struct server_socket *bound_server_socket(struct socket_factory *gf,
 
 static struct socket_factory_ops simple_socket_factory_ops = {
 	sf_connect,
-	connect_address,
+	connect_addresses,
 	unbound_server_socket,
 	bound_server_socket
 };

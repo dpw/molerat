@@ -10,6 +10,11 @@
 
 struct stream *bytes_read_stream_create(struct bytes buf);
 
+static inline struct stream *c_string_read_stream_create(const char *s)
+{
+	return bytes_read_stream_create(c_string_bytes(s));
+}
+
 struct stream *growbuf_write_stream_create(struct growbuf *growbuf);
 
 /* This stream reads and writes from the underlying stream a byte at a

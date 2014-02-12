@@ -75,4 +75,15 @@ enum stream_result stream_noop_close(struct stream *gs,
 				     struct tasklet *t,
 				     struct error *err);
 
+struct stream_pump;
+struct stream_pump *stream_pump_create(struct stream *source,
+				       struct stream *dest,
+				       size_t buf_size);
+void stream_pump_destroy(struct stream_pump *sp);
+void stream_pump_destroy_with_source(struct stream_pump *sp);
+void stream_pump_destroy_with_dest(struct stream_pump *sp);
+void stream_pump_destroy_with_streams(struct stream_pump *sp);
+ssize_t stream_pump(struct stream_pump *sp, struct tasklet *t,
+		    struct error *err);
+
 #endif

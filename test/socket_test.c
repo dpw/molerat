@@ -7,20 +7,19 @@
 #include <molerat/application.h>
 #include <molerat/echo_server.h>
 
+#include "stream_utils.h"
+
 struct tester {
 	struct mutex mutex;
 	struct socket *socket;
 
 	struct tasklet write_tasklet;
-	char *write_buf;
-	size_t write_len;
-	size_t write_pos;
+	struct stream_pump *write_pump;
 	struct error write_err;
 
 	struct tasklet read_tasklet;
-	char *read_buf;
-	size_t read_pos;
-	size_t read_capacity;
+	struct growbuf read_buf;
+	struct stream_pump *read_pump;
 	struct error read_err;
 
 	int stopped;
@@ -36,56 +35,25 @@ void tester_stop_1(struct tester *t, struct tasklet *tasklet)
 void tester_write(void *v_t)
 {
 	struct tester *t = v_t;
-	ssize_t res;
 
-	for (;;) {
-		if (t->write_pos == t->write_len) {
-			socket_close_write(t->socket, &t->write_err);
-			goto done;
-		}
+	switch (stream_pump(t->write_pump, &t->write_tasklet, &t->write_err)) {
+	case STREAM_END:
+		socket_close_write(t->socket, &t->write_err);
+		/* fall through */
 
-		switch (res = socket_write(t->socket,
-					   t->write_buf + t->write_pos,
-					   t->write_len - t->write_pos,
-					   &t->write_tasklet, &t->write_err)) {
-		case STREAM_WAITING:
-			return;
-
-		case STREAM_ERROR:
-			goto done;
-		}
-
-		t->write_pos += res;
+	case STREAM_ERROR:
+		tester_stop_1(t, &t->write_tasklet);
 	}
-
- done:
-	tester_stop_1(t, &t->write_tasklet);
 }
 
 void tester_read(void *v_t)
 {
-	struct tester*t = v_t;
-	ssize_t res;
+	struct tester *t = v_t;
 
-	for (;;) {
-		if (t->read_pos == t->read_capacity) {
-			t->read_capacity = t->read_capacity * 2 + 100;
-			t->read_buf = xrealloc(t->read_buf, t->read_capacity);
-		}
-
-		switch (res = socket_read(t->socket, t->read_buf + t->read_pos,
-					  t->read_capacity - t->read_pos,
-					  &t->read_tasklet, &t->read_err)) {
-		case STREAM_WAITING:
-			return;
-
-		case STREAM_END:
-		case STREAM_ERROR:
-			tester_stop_1(t, &t->read_tasklet);
-			return;
-		}
-
-		t->read_pos += res;
+	switch (stream_pump(t->read_pump, &t->read_tasklet, &t->read_err)) {
+	case STREAM_END:
+	case STREAM_ERROR:
+		tester_stop_1(t, &t->read_tasklet);
 	}
 }
 
@@ -97,15 +65,15 @@ struct tester *tester_create(struct socket *s)
 	t->stopped = 0;
 
 	tasklet_init(&t->write_tasklet, &t->mutex, t);
-	t->write_buf = "Hello";
-	t->write_len = 5;
-	t->write_pos = 0;
+	t->write_pump
+		= stream_pump_create(c_string_read_stream_create("Hello"),
+				     socket_stream(s), 10);
 	error_init(&t->write_err);
 
 	tasklet_init(&t->read_tasklet, &t->mutex, t);
-	t->read_buf = NULL;
-	t->read_pos = 0;
-	t->read_capacity = 0;
+	growbuf_init(&t->read_buf, 10);
+	t->read_pump = stream_pump_create(socket_stream(s),
+				 growbuf_write_stream_create(&t->read_buf), 10);
 	error_init(&t->read_err);
 
 	mutex_lock(&t->mutex);
@@ -121,10 +89,12 @@ static void tester_destroy(struct tester *t)
 	mutex_lock(&t->mutex);
 	tasklet_fini(&t->write_tasklet);
 	tasklet_fini(&t->read_tasklet);
+	stream_pump_destroy_with_source(t->write_pump);
+	stream_pump_destroy_with_dest(t->read_pump);
+	growbuf_fini(&t->read_buf);
 	socket_destroy(t->socket);
 	error_fini(&t->write_err);
 	error_fini(&t->read_err);
-	free(t->read_buf);
 	mutex_unlock_fini(&t->mutex);
 	free(t);
 }
@@ -140,8 +110,8 @@ static void tester_check(struct tester *t)
 	check_error(&t->write_err);
 	check_error(&t->read_err);
 
-	if (t->write_len != t->read_pos
-	    || memcmp(t->write_buf, t->read_buf, t->write_len))
+	if (bytes_compare(c_string_bytes("Hello"),
+			  growbuf_to_bytes(&t->read_buf)))
 		die("Data returned from echo server did not match data sent");
 }
 

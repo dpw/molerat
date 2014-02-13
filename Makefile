@@ -31,18 +31,19 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 	echo_server_main.c http-parser/http_parser.c http_reader.c \
 	http_status_gen.c http_writer.c http_server.c http_server_main.c \
 	http_client.c http_status.c skinny-mutex/skinny_mutex.c \
-	stream.c delim_stream.c
+	stream.c delim_stream.c socket_transport.c
 
 # Test source files under test/
 TEST_SRCS=buffer_test.c tasklet_test.c queue_test.c socket_test.c timer_test.c \
-	stream_utils.c http_reader_test.c delim_stream_test.c
+	stream_utils.c http_reader_test.c delim_stream_test.c transport_test.c
 
 # Header files under include
 HDRS=include/http-parser/http_parser.h include/skinny-mutex/skinny_mutex.h \
 	$(addprefix include/molerat/,base.h buffer.h thread.h tasklet.h \
 		application.h queue.h watched_fd.h stream.h socket.h \
 		echo_server.h http_reader.h http_status.h http_writer.h \
-		http_server.h delim_stream.h endian.h) \
+		http_server.h delim_stream.h endian.h transport.h \
+		socket_transport.h) \
 	 src/poll.h test/stream_utils.h
 
 # Main exectuables that get built
@@ -50,7 +51,7 @@ EXECUTABLES=echo_server http_status_gen http_server http_client
 
 # Test executables that get built
 TEST_EXECUTABLES=buffer_test tasklet_test queue_test socket_test timer_test \
-	http_reader_test delim_stream_test
+	http_reader_test delim_stream_test transport_test
 
 # All source directories
 SRCDIRS=src src/skinny-mutex src/http-parser test
@@ -70,6 +71,7 @@ HDROBJS_$(ROOT)include/molerat/timer.h=src/poll_poll.o
 endif
 
 HDROBJS_$(ROOT)include/molerat/endian.h=
+HDROBJS_$(ROOT)include/molerat/transport.h=
 HDROBJS_$(ROOT)include/http-parser/http_parser.h=src/http-parser/http_parser.o
 HDROBJS_$(ROOT)include/skinny-mutex/skinny_mutex.h=src/skinny-mutex/skinny_mutex.o
 

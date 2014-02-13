@@ -76,6 +76,7 @@ void stream_pump_destroy_with_dest(struct stream_pump *sp)
 
 void stream_pump_destroy_with_streams(struct stream_pump *sp)
 {
+	stream_destroy(sp->source);
 	stream_destroy(sp->dest);
 	free(sp);
 }
@@ -84,7 +85,7 @@ ssize_t stream_pump(struct stream_pump *sp, struct tasklet *t,
 		    struct error *err)
 {
 	ssize_t res;
-	ssize_t total = STREAM_WAITING;
+	ssize_t total = 0;
 
 	for (;;) {
 		if (!sp->len) {

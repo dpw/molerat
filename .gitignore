@@ -17,3 +17,4 @@ src/http_status.c
 http_status_gen
 http_reader_test
 delim_stream_test
+transport_test

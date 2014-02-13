@@ -36,6 +36,7 @@ typedef unsigned char bool_t;
 #define pointer_set_bits(p, bits) ((void *)((uintptr_t)(p) | (bits)))
 
 void die(const char *fmt, ...) __attribute__ ((noreturn,format (printf, 1, 2)));
+void warn(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 
 void *xalloc(size_t s);
 void *xrealloc(void *p, size_t s);

@@ -25,6 +25,16 @@ void die(const char *fmt, ...)
 	abort();
 }
 
+void warn(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fputc('\n', stderr);
+}
+
 void *xalloc(size_t s)
 {
 	void *res = malloc(s);

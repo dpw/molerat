@@ -19,7 +19,7 @@ struct echoer {
 static void echoer_echo(void *v_e);
 static void echoer_close(void *v_e);
 
-static struct echoer *echoer_create(struct socket *s, bool_t verbose)
+static void echoer_create(struct socket *s, bool_t verbose)
 {
 	struct echoer *e = xalloc(sizeof *e);
 	mutex_init(&e->mutex);
@@ -29,12 +29,7 @@ static struct echoer *echoer_create(struct socket *s, bool_t verbose)
 	e->buf = xalloc(BUF_SIZE);
 	e->pos = e->len = 0;
 	e->verbose = verbose;
-
-	mutex_lock(&e->mutex);
-	tasklet_goto(&e->tasklet, echoer_echo);
-	mutex_unlock(&e->mutex);
-
-	return e;
+	tasklet_later(&e->tasklet, echoer_echo);
 }
 
 static void echoer_destroy(struct echoer *e)

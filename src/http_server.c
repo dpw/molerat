@@ -89,8 +89,7 @@ static void remove_connection(struct connection *conn)
 	mutex_unlock(&server->mutex);
 }
 
-static struct connection *connection_create(struct http_server *server,
-					    struct socket *s);
+static void connection_create(struct http_server *server, struct socket *s);
 static void connection_destroy_locked(struct connection *conn);
 
 void http_server_destroy(struct http_server *hs)
@@ -177,8 +176,7 @@ static void update_timeout(struct connection *c)
 	timer_set_relative(&c->timeout, 240 * XTIME_SECOND, 241 * XTIME_SECOND);
 }
 
-static struct connection *connection_create(struct http_server *server,
-					    struct socket *s)
+static void connection_create(struct http_server *server, struct socket *s)
 {
 	struct connection *conn = xalloc(sizeof *conn);
 
@@ -193,12 +191,10 @@ static struct connection *connection_create(struct http_server *server,
 	http_writer_init(&conn->writer, socket_stream(s));
 	add_connection(server, conn);
 
-	tasklet_later(&conn->tasklet, connection_read_prebody);
 	mutex_lock(&conn->mutex);
-	tasklet_goto(&conn->timeout_tasklet, connection_timeout);
+	tasklet_later(&conn->tasklet, connection_read_prebody);
+	tasklet_later(&conn->timeout_tasklet, connection_timeout);
 	mutex_unlock(&conn->mutex);
-
-	return conn;
 }
 
 static void connection_destroy_locked(struct connection *conn)

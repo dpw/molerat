@@ -448,7 +448,7 @@ static struct client_socket *client_socket_create(
 	/* Start connecting */
 	mutex_lock(&s->base.mutex);
 	start_connecting(c);
-	tasklet_goto(&c->tasklet, finish_connecting);
+	tasklet_later(&c->tasklet, finish_connecting);
 	mutex_unlock(&s->base.mutex);
 
 	return s;

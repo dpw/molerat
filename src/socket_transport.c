@@ -20,6 +20,9 @@ struct socket_server {
 	struct server_socket *socket;
 	struct mutex mutex;
 	struct tasklet tasklet;
+	struct cond handlers_done;
+	int calling_handler;
+	int waiting_for_handlers_done;
 };
 
 struct socket_address {
@@ -65,9 +68,16 @@ static void ss_accept(void *v_s)
 
 	error_init(&err);
 
+	s->calling_handler++;
 	while ((sock = server_socket_accept(s->socket, &s->tasklet,
-					    &err)))
+					    &err))) {
+		mutex_unlock(&s->mutex);
 		s->handler(socket_stream(sock), s->handler_data);
+		mutex_lock(&s->mutex);
+	}
+
+	if (!--s->calling_handler && s->waiting_for_handlers_done)
+		cond_broadcast(&s->handlers_done);
 
 	if (!error_ok(&err)) {
 		warn("%s", error_message(&err));
@@ -98,6 +108,8 @@ static struct async_server *st_serve(struct async_transport *gt,
 
 	mutex_init(&s->mutex);
 	tasklet_init(&s->tasklet, &s->mutex, s);
+	cond_init(&s->handlers_done);
+	s->calling_handler = s->waiting_for_handlers_done = 0;
 
 	mutex_lock(&s->mutex);
 	tasklet_goto(&s->tasklet, ss_accept);
@@ -111,6 +123,16 @@ static void ss_destroy(struct async_server *gs)
 	struct socket_server *s = container_of(gs, struct socket_server, base);
 
 	mutex_lock(&s->mutex);
+
+	if (s->calling_handler) {
+		s->waiting_for_handlers_done++;
+		do {
+			cond_wait(&s->handlers_done, &s->mutex);
+		} while (s->calling_handler);
+		s->waiting_for_handlers_done--;
+	}
+
+	cond_fini(&s->handlers_done);
 	tasklet_fini(&s->tasklet);
 	mutex_unlock_fini(&s->mutex);
 	server_socket_destroy(s->socket);

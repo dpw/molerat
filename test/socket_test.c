@@ -19,7 +19,6 @@ struct tester {
 
 	struct tasklet read_tasklet;
 	struct growbuf read_buf;
-	struct stream_pump *read_pump;
 	struct error read_err;
 
 	int stopped;
@@ -50,7 +49,8 @@ void tester_read(void *v_t)
 {
 	struct tester *t = v_t;
 
-	switch (stream_pump(t->read_pump, &t->read_tasklet, &t->read_err)) {
+	switch (stream_read_all(socket_stream(t->socket), &t->read_buf, 10,
+				&t->read_tasklet, &t->read_err)) {
 	case STREAM_END:
 	case STREAM_ERROR:
 		tester_stop_1(t, &t->read_tasklet);
@@ -72,8 +72,6 @@ struct tester *tester_create(struct socket *s)
 
 	tasklet_init(&t->read_tasklet, &t->mutex, t);
 	growbuf_init(&t->read_buf, 10);
-	t->read_pump = stream_pump_create(socket_stream(s),
-				 growbuf_write_stream_create(&t->read_buf), 10);
 	error_init(&t->read_err);
 
 	mutex_lock(&t->mutex);
@@ -90,7 +88,6 @@ static void tester_destroy(struct tester *t)
 	tasklet_fini(&t->write_tasklet);
 	tasklet_fini(&t->read_tasklet);
 	stream_pump_destroy_with_source(t->write_pump);
-	stream_pump_destroy_with_dest(t->read_pump);
 	growbuf_fini(&t->read_buf);
 	socket_destroy(t->socket);
 	error_fini(&t->write_err);

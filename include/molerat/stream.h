@@ -75,6 +75,11 @@ enum stream_result stream_noop_close(struct stream *gs,
 				     struct tasklet *t,
 				     struct error *err);
 
+struct growbuf;
+ssize_t stream_read_all(struct stream *s, struct growbuf *gb,
+			size_t size_hint,
+			struct tasklet *t, struct error *err);
+
 struct stream_pump;
 struct stream_pump *stream_pump_create(struct stream *source,
 				       struct stream *dest,

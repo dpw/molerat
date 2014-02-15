@@ -89,6 +89,11 @@ static inline size_t growbuf_space(const struct growbuf *growbuf)
 	return growbuf->limit - growbuf->end;
 }
 
+static inline void *growbuf_end(const struct growbuf *growbuf)
+{
+	return growbuf->end;
+}
+
 static inline void *growbuf_reserve(struct growbuf *growbuf, size_t need)
 {
 	assert(!growbuf_frozen(growbuf));

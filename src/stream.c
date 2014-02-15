@@ -1,4 +1,5 @@
 #include <molerat/stream.h>
+#include <molerat/buffer.h>
 
 ssize_t stream_read_only_write(struct stream *gs, const void *buf,
 			       size_t len, struct tasklet *t,
@@ -34,6 +35,44 @@ enum stream_result stream_noop_close(struct stream *gs, struct tasklet *t,
 	(void)err;
 
 	return STREAM_OK;
+}
+
+ssize_t stream_read_all(struct stream *s, struct growbuf *gb,
+			size_t size_hint,
+			struct tasklet *t, struct error *err)
+{
+	ssize_t res;
+	void *buf;
+	ssize_t total = 0;
+	size_t space = growbuf_space(gb);
+
+	if (space) {
+		buf = growbuf_end(gb);
+	}
+	else {
+		space = size_hint;
+		buf = growbuf_reserve(gb, space);
+	}
+
+	for (;;) {
+		res = stream_read(s, buf, space, t, err);
+		if (res < 0)
+			break;
+
+		growbuf_advance(gb, res);
+		total += res;
+
+		if ((size_t)res >= space) {
+			space = space * 2;
+			buf = growbuf_reserve(gb, space);
+		}
+		else {
+			space = growbuf_space(gb);
+			buf = growbuf_end(gb);
+		}
+	}
+
+	return res != STREAM_WAITING ? res : total;
 }
 
 struct stream_pump {

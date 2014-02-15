@@ -16,20 +16,19 @@ struct receiver {
 
 struct incoming {
 	struct receiver *receiver;
+	struct stream *input;
 	struct mutex mutex;
 	struct tasklet tasklet;
 	struct growbuf buf;
 	struct error err;
-	struct stream_pump *pump;
 };
 
 static void read_message(void *v_i)
 {
 	struct incoming *i = v_i;
 	struct receiver *r;
-	ssize_t res;
 
-	switch (res = stream_pump(i->pump, &i->tasklet, &i->err)) {
+	switch (stream_read_all(i->input, &i->buf, 10, &i->tasklet, &i->err)) {
 	case STREAM_END:
 		break;
 
@@ -45,7 +44,7 @@ static void read_message(void *v_i)
 		die("Message did not contain expected data");
 
 	r = i->receiver;
-	stream_pump_destroy_with_streams(i->pump);
+	stream_destroy(i->input);
 	error_fini(&i->err);
 	growbuf_fini(&i->buf);
 	tasklet_fini(&i->tasklet);
@@ -65,11 +64,10 @@ static void handler(struct stream *input, void *v_r)
 	struct incoming *i = xalloc(sizeof *i);
 
 	i->receiver = v_r;
+	i->input = input;
 	mutex_init(&i->mutex);
 	tasklet_init(&i->tasklet, &i->mutex, i);
 	growbuf_init(&i->buf, 10);
-	i->pump = stream_pump_create(input,
-				     growbuf_write_stream_create(&i->buf), 10);
 	error_init(&i->err);
 
 	tasklet_later(&i->tasklet, read_message);

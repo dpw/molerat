@@ -14,11 +14,11 @@ typedef uint16_le_t net_chunk_size_t;
 
 enum delim_state {
 	DELIM_STATE_START = 0,
-	/* DELIM_STATE_CUNK_INTRO_* values represent the number of
+	/* DELIM_STATE_CHUNK_INTRO_* values represent the number of
 	   bytes written/read of the chunk intro */
 	DELIM_STATE_CHUNK_INTRO_1,
 	DELIM_STATE_PAYLOAD,
-	/* DELIM_STATE_CUNK_FINAL_INTRO_* values represent the number of
+	/* DELIM_STATE_CHUNK_FINAL_INTRO_* values represent the number of
 	   bytes written of the closing chunk intro */
 	DELIM_STATE_FINAL_CHUNK_INTRO_0,
 	DELIM_STATE_FINAL_CHUNK_INTRO_1,
@@ -175,8 +175,8 @@ static enum stream_result delim_write_stream_close(struct stream *gs,
 			chunk_size_t pos
 				= s->state - DELIM_STATE_FINAL_CHUNK_INTRO_0;
 			chunk_size_t len = DELIM_STATE_END - s->state;
-			res = stream_write(s->underlying, (char *)&cl + pos, len,
-					   t, err);
+			res = stream_write(s->underlying, (char *)&cl + pos,
+					   len, t, err);
 			if (res < 0)
 				return res;
 

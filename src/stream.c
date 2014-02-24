@@ -42,34 +42,28 @@ ssize_t stream_read_all(struct stream *s, struct growbuf *gb,
 			struct tasklet *t, struct error *err)
 {
 	ssize_t res;
-	void *buf;
 	ssize_t total = 0;
 	size_t space = growbuf_space(gb);
 
-	if (space) {
-		buf = growbuf_end(gb);
-	}
-	else {
-		space = size_hint;
-		buf = growbuf_reserve(gb, space);
+	if (!space) {
+		/* Growbuf is full, so make some space */
+		growbuf_grow(gb, size_hint);
+		space = growbuf_space(gb);
 	}
 
 	for (;;) {
-		res = stream_read(s, buf, space, t, err);
+		res = stream_read(s, growbuf_end(gb), space, t, err);
 		if (res < 0)
 			break;
 
 		growbuf_advance(gb, res);
 		total += res;
 
-		if ((size_t)res >= space) {
-			space = space * 2;
-			buf = growbuf_reserve(gb, space);
-		}
-		else {
-			space = growbuf_space(gb);
-			buf = growbuf_end(gb);
-		}
+		if ((size_t)res >= space)
+			/* We filled the growbuf, so make more space */
+			growbuf_grow(gb, 1);
+
+		space = growbuf_space(gb);
 	}
 
 	return res != STREAM_WAITING ? res : total;

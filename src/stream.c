@@ -37,36 +37,23 @@ enum stream_result stream_noop_close(struct stream *gs, struct tasklet *t,
 	return STREAM_OK;
 }
 
-ssize_t stream_read_all(struct stream *s, struct growbuf *gb,
-			size_t size_hint,
-			struct tasklet *t, struct error *err)
+ssize_t stream_read_growbuf(struct stream *s, struct growbuf *gb,
+			    struct tasklet *t, struct error *err)
 {
 	ssize_t res;
-	ssize_t total = 0;
 	size_t space = growbuf_space(gb);
 
 	if (!space) {
 		/* Growbuf is full, so make some space */
-		growbuf_grow(gb, size_hint);
+		growbuf_grow(gb, 1);
 		space = growbuf_space(gb);
 	}
 
-	for (;;) {
-		res = stream_read(s, growbuf_end(gb), space, t, err);
-		if (res < 0)
-			break;
-
+	res = stream_read(s, growbuf_end(gb), space, t, err);
+	if (res > 0)
 		growbuf_advance(gb, res);
-		total += res;
 
-		if ((size_t)res >= space)
-			/* We filled the growbuf, so make more space */
-			growbuf_grow(gb, 1);
-
-		space = growbuf_space(gb);
-	}
-
-	return res != STREAM_WAITING ? res : total;
+	return res;
 }
 
 struct stream_pump {

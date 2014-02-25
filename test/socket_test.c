@@ -49,11 +49,17 @@ void tester_read(void *v_t)
 {
 	struct tester *t = v_t;
 
-	switch (stream_read_all(socket_stream(t->socket), &t->read_buf, 10,
-				&t->read_tasklet, &t->read_err)) {
-	case STREAM_END:
-	case STREAM_ERROR:
-		tester_stop_1(t, &t->read_tasklet);
+	for (;;) {
+		switch (stream_read_growbuf(socket_stream(t->socket),
+				&t->read_buf, &t->read_tasklet, &t->read_err)) {
+		case STREAM_WAITING:
+			return;
+
+		case STREAM_END:
+		case STREAM_ERROR:
+			tester_stop_1(t, &t->read_tasklet);
+			return;
+		}
 	}
 }
 

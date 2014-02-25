@@ -28,17 +28,21 @@ static void read_message(void *v_i)
 	struct incoming *i = v_i;
 	struct receiver *r;
 
-	switch (stream_read_all(i->input, &i->buf, 10, &i->tasklet, &i->err)) {
-	case STREAM_END:
-		break;
+	for (;;) {
+		switch (stream_read_growbuf(i->input, &i->buf, &i->tasklet,
+					    &i->err)) {
+		case STREAM_END:
+			goto finished_read;
 
-	case STREAM_ERROR:
-		die("%s", error_message(&i->err));
+		case STREAM_ERROR:
+			die("%s", error_message(&i->err));
 
-	default:
-		return;
+		case STREAM_WAITING:
+			return;
+		}
 	}
 
+ finished_read:
 	if (bytes_compare(c_string_bytes("Hello"),
 			  growbuf_to_bytes(&i->buf)))
 		die("Message did not contain expected data");

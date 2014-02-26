@@ -109,35 +109,36 @@ struct sender {
 	struct mutex mutex;
 	struct tasklet tasklet;
 	struct error err;
-	struct stream_pump *pump;
+	struct stream *output;
+	struct bytes buf;
 };
 
 static void send(void *v_s)
 {
 	struct sender *s = v_s;
 
-	if (!s->pump) {
-		struct stream *ss = async_transport_send(s->transport,
-							 s->address, &s->err);
-		assert(s);
-
-		s->pump = stream_pump_create(
-					  c_string_read_stream_create("Hello"),
-					  ss, 10);
+	if (!s->output) {
+		s->output = async_transport_send(s->transport,
+						 s->address, &s->err);
+		assert(s->output);
 	}
 
-	switch (stream_pump(s->pump, &s->tasklet, &s->err)) {
-	case STREAM_ERROR:
-		die("%s", error_message(&s->err));
-		/* fall through */
+	for (;;) {
+		switch (stream_write_bytes(s->output, &s->buf, &s->tasklet,
+					   &s->err)) {
+		case STREAM_ERROR:
+			die("%s", error_message(&s->err));
+			/* fall through */
 
-	case STREAM_END:
-		if (s->pump) {
-			stream_pump_destroy_with_streams(s->pump);
-			s->pump = NULL;
+		case STREAM_END:
+			stream_destroy(s->output);
+			s->output = NULL;
+			tasklet_stop(&s->tasklet);
+
+			/* fall through */
+		case STREAM_WAITING:
+			return;
 		}
-
-		tasklet_stop(&s->tasklet);
 	}
 }
 
@@ -150,7 +151,8 @@ static void sender_init(struct sender *s, struct async_transport *t,
 	mutex_init(&s->mutex);
 	tasklet_init(&s->tasklet, &s->mutex, s);
 	error_init(&s->err);
-	s->pump	= NULL;
+	s->output = NULL;
+	s->buf = c_string_bytes("Hello");
 
 	mutex_lock(&s->mutex);
 	tasklet_goto(&s->tasklet, send);
@@ -161,8 +163,8 @@ static void sender_fini(struct sender *s)
 {
 	mutex_lock(&s->mutex);
 
-	if (s->pump)
-		stream_pump_destroy_with_streams(s->pump);
+	if (s->output)
+		stream_destroy(s->output);
 
 	error_fini(&s->err);
 	tasklet_fini(&s->tasklet);

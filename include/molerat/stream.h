@@ -79,15 +79,8 @@ struct growbuf;
 ssize_t stream_read_growbuf(struct stream *s, struct growbuf *gb,
 			    struct tasklet *t, struct error *err);
 
-struct stream_pump;
-struct stream_pump *stream_pump_create(struct stream *source,
-				       struct stream *dest,
-				       size_t buf_size);
-void stream_pump_destroy(struct stream_pump *sp);
-void stream_pump_destroy_with_source(struct stream_pump *sp);
-void stream_pump_destroy_with_dest(struct stream_pump *sp);
-void stream_pump_destroy_with_streams(struct stream_pump *sp);
-ssize_t stream_pump(struct stream_pump *sp, struct tasklet *t,
-		    struct error *err);
+struct bytes;
+ssize_t stream_write_bytes(struct stream *s, struct bytes *b,
+			   struct tasklet *t, struct error *err);
 
 #endif

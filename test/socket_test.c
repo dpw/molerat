@@ -14,7 +14,7 @@ struct tester {
 	struct socket *socket;
 
 	struct tasklet write_tasklet;
-	struct stream_pump *write_pump;
+	struct bytes write_buf;
 	struct error write_err;
 
 	struct tasklet read_tasklet;
@@ -35,13 +35,21 @@ void tester_write(void *v_t)
 {
 	struct tester *t = v_t;
 
-	switch (stream_pump(t->write_pump, &t->write_tasklet, &t->write_err)) {
-	case STREAM_END:
-		socket_close_write(t->socket, &t->write_err);
-		/* fall through */
+	for (;;) {
+		switch (stream_write_bytes(socket_stream(t->socket),
+			    &t->write_buf, &t->write_tasklet, &t->write_err)) {
 
-	case STREAM_ERROR:
-		tester_stop_1(t, &t->write_tasklet);
+		case STREAM_END:
+			socket_close_write(t->socket, &t->write_err);
+			/* fall through */
+
+		case STREAM_ERROR:
+			tester_stop_1(t, &t->write_tasklet);
+			/* fall through */
+
+		case STREAM_WAITING:
+			return;
+		}
 	}
 }
 
@@ -71,9 +79,7 @@ struct tester *tester_create(struct socket *s)
 	t->stopped = 0;
 
 	tasklet_init(&t->write_tasklet, &t->mutex, t);
-	t->write_pump
-		= stream_pump_create(c_string_read_stream_create("Hello"),
-				     socket_stream(s), 10);
+	t->write_buf = c_string_bytes("Hello");
 	error_init(&t->write_err);
 
 	tasklet_init(&t->read_tasklet, &t->mutex, t);
@@ -93,7 +99,6 @@ static void tester_destroy(struct tester *t)
 	mutex_lock(&t->mutex);
 	tasklet_fini(&t->write_tasklet);
 	tasklet_fini(&t->read_tasklet);
-	stream_pump_destroy_with_source(t->write_pump);
 	growbuf_fini(&t->read_buf);
 	socket_destroy(t->socket);
 	error_fini(&t->write_err);

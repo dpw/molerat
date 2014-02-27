@@ -60,6 +60,15 @@ void *xrealloc(void *p, size_t s)
 	return NULL;
 }
 
+char *xstrdup(const char *s)
+{
+	char *copy = strdup(s);
+	if (s)
+		return copy;
+
+	die("strdup failed");
+}
+
 char *xsprintf(const char *fmt, ...)
 {
         int res;

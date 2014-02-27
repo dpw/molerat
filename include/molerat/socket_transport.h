@@ -5,6 +5,7 @@
 
 struct socket_factory;
 
-struct async_transport *socket_transport_create(struct socket_factory *sf);
+struct async_transport *socket_transport_create(struct socket_factory *sf,
+						const char *bind_host);
 
 #endif

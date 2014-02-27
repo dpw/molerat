@@ -174,7 +174,8 @@ static void sender_fini(struct sender *s)
 
 static void test_socket_transport(void)
 {
-	struct async_transport *st = socket_transport_create(socket_factory());
+	struct async_transport *st
+		= socket_transport_create(socket_factory(), "127.0.0.1");
 	struct receiver receiver;
 	struct sender senders[MESSAGES];
 	size_t i;

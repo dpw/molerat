@@ -40,6 +40,7 @@ void warn(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 
 void *xalloc(size_t s);
 void *xrealloc(void *p, size_t s);
+char *xstrdup(const char *s);
 
 char *xsprintf(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 

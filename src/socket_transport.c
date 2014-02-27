@@ -11,6 +11,7 @@ static struct async_transport_ops socket_transport_ops;
 struct socket_transport {
 	struct async_transport base;
 	struct socket_factory *socket_factory;
+	char *bind_host;
 };
 
 struct socket_server {
@@ -30,12 +31,14 @@ struct socket_address {
 	struct sockaddr **addrs;
 };
 
-struct async_transport *socket_transport_create(struct socket_factory *sf)
+struct async_transport *socket_transport_create(struct socket_factory *sf,
+						const char *bind_host)
 {
 	struct socket_transport *t = xalloc(sizeof *t);
 
 	t->base.ops = &socket_transport_ops;
 	t->socket_factory = sf;
+	t->bind_host = xstrdup(bind_host);
 
 	return &t->base;
 }
@@ -44,6 +47,7 @@ static void st_destroy(struct async_transport *gt)
 {
 	struct socket_transport *t
 		= container_of(gt, struct socket_transport, base);
+	free(t->bind_host);
 	free(t);
 }
 
@@ -100,7 +104,8 @@ static struct async_server *st_serve(struct async_transport *gt,
 	s->handler = handler;
 	s->handler_data = data;
 	s->socket
-		= socket_factory_unbound_server_socket(t->socket_factory, err);
+		= socket_factory_bound_server_socket(t->socket_factory,
+						     t->bind_host, NULL, err);
 	if (unlikely(!s->socket)) {
 		free(s);
 		return NULL;

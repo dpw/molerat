@@ -169,6 +169,7 @@ static void connection_read_body(void *v_c);
 static void connection_read_prebody(void *v_c);
 static void respond(struct connection *c);
 static void connection_write(void *v_c);
+static void connection_finish_write(void *v_c);
 static void connection_timeout(void *v_c);
 
 static void update_timeout(struct connection *c)
@@ -347,7 +348,26 @@ static void connection_write(void *v_c)
 		c->body_pos += res;
 	}
 
-	tasklet_later(&c->tasklet, connection_read_prebody);
+	tasklet_goto(&c->tasklet, connection_finish_write);
+}
+
+static void connection_finish_write(void *v_c)
+{
+	struct connection *c = v_c;
+
+	switch (http_writer_end(&c->writer, &c->tasklet, &c->err)) {
+	case HTTP_WRITER_END_WAITING:
+		return;
+
+	case HTTP_WRITER_END_ERROR:
+		fprintf(stderr, "Error: %s\n", error_message(&c->err));
+		connection_destroy_locked(c);
+		return;
+
+	case HTTP_WRITER_END_DONE:
+		tasklet_later(&c->tasklet, connection_read_prebody);
+		return;
+	}
 }
 
 static void connection_timeout(void *v_c)

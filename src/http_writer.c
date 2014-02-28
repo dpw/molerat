@@ -73,16 +73,15 @@ static ssize_t finish_prebody(struct http_writer *w,
 		/* fall through */
 
 	case HTTP_WRITER_PREBODY: {
-		size_t len = bytes_length(w->prebody_out);
-		while (len) {
-			ssize_t res = stream_write(w->stream,
-					      bytes_current(w->prebody_out),
-					      len, t, e);
-			if (res < 0)
-				return res;
-
-			bytes_advance(&w->prebody_out, res);
-			len -= res;
+		for (;;) {
+			ssize_t res = stream_write_bytes(w->stream,
+							 &w->prebody_out, t, e);
+			if (res < 0) {
+				if (res == STREAM_END)
+					break;
+				else
+					return res;
+			}
 		}
 
 		w->state = HTTP_WRITER_BODY;

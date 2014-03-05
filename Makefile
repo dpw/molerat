@@ -4,9 +4,10 @@ ifneq ($(shell ( echo "$(MAKE_VERSION)" ; echo "$(REQUIRED_MAKE_VERSION)" ) | so
 $(error GNU make version $(REQUIRED_MAKE_VERSION) required)
 endif
 
+# Preliminaries
 .DEFAULT_GOAL:=all
-
 MAKEFILE:=$(firstword $(MAKEFILE_LIST))
+UNAME_S:=$(shell uname -s)
 
 # You can override this from the command line
 CFLAGS=-Wall -Wextra -Werror -ansi -g
@@ -15,7 +16,8 @@ CFLAGS=-Wall -Wextra -Werror -ansi -g
 LD_CFLAGS=$(filter-out -ansi,$(CFLAGS))
 
 # ROOT is the path to the source tree.  If non-empty, then it includes
-# a trailing slash.
+# a trailing slash.  By default, use the directory containing this
+# Makefile.
 ROOT=$(filter-out ./,$(dir $(MAKEFILE)))
 
 # VPATH tells make where to search for sources, if buliding from a
@@ -27,11 +29,15 @@ PROJECT_CFLAGS=-D_GNU_SOURCE -I$(ROOT)include -Wpointer-arith
 
 # Principal source files under src/
 SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
-	poll_common.c poll_poll.c poll_epoll.c socket.c echo_server.c \
+	poll_common.c poll_poll.c socket.c echo_server.c \
 	echo_server_main.c http-parser/http_parser.c http_reader.c \
 	http_status_gen.c http_writer.c http_server.c http_server_main.c \
 	http_client.c http_status.c skinny-mutex/skinny_mutex.c \
 	stream.c delim_stream.c socket_transport.c
+ifeq "$(UNAME_S)" "Linux"
+SRCS+=poll_epoll.c
+USE_EPOLL=yes
+endif
 
 # Test source files under test/
 TEST_SRCS=buffer_test.c tasklet_test.c queue_test.c socket_test.c timer_test.c \
@@ -149,9 +155,17 @@ endef
 $(foreach E,$(EXECUTABLES),$(eval $(call build_executable,$(E),src/)))
 $(foreach E,$(TEST_EXECUTABLES),$(eval $(call build_executable,$(E),test/)))
 
+# This trivial variable can be called to produce a recipe line in
+# contexts where that would otherwise be difficult, e.g. in a foreach
+# function.
+define recipe_line
+$(1)
+
+endef
+
 .PHONY: run_tests
 run_tests: $(TEST_EXECUTABLES)
-	$(foreach T,$(TEST_EXECUTABLES),./$(T) &&) :
+	$(foreach T,$(TEST_EXECUTABLES),$(call recipe_line,./$(T)))
 
 .PHONY: coverage
 coverage:

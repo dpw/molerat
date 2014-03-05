@@ -1,6 +1,8 @@
 #ifndef MOLERAT_HTTP_WRITER_H
 #define MOLERAT_HTTP_WRITER_H
 
+#include <sys/types.h> /* For ssize_t */
+
 #include <molerat/buffer.h>
 
 struct stream;

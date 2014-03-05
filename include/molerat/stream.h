@@ -1,6 +1,8 @@
 #ifndef MOLERAT_STREAM_H
 #define MOLERAT_STREAM_H
 
+#include <sys/types.h> /* For ssize_t */
+
 #include <molerat/base.h>
 
 struct tasklet;

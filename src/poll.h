@@ -1,8 +1,6 @@
 #ifndef MOLERAT_POLL_H
 #define MOLERAT_POLL_H
 
-#include <signal.h>
-
 #include <molerat/thread.h>
 #include <molerat/watched_fd.h>
 #include <molerat/timer.h>
@@ -28,8 +26,10 @@ void poll_common_stop(struct poll_common *p);
 struct poll *poll_create(void);
 void poll_destroy(struct poll *p);
 
+void poll_thread_init(struct poll *p);
 void poll_prepare(struct poll *p);
-void poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask);
+void poll_poll(struct poll *p, xtime_t timeout);
 void poll_dispatch(struct poll *p);
+void poll_wake(struct poll *p);
 
 #endif

@@ -1,3 +1,5 @@
+#include <unistd.h>
+#include <fcntl.h>
 #include <poll.h>
 
 #include "poll.h"
@@ -43,18 +45,31 @@ struct poll {
 		size_t used;
 	} pollfds;
 
+	int pipefd[2];
 	int poll_result;
 };
 
 struct poll *poll_create(void)
 {
 	struct poll *p = xalloc(sizeof *p);
+	int i;
+
 	p->updates = NULL;
 
-	p->pollfds.used = 0;
+	/* pollfds.pollfds[0] is used for reading from the wakeup pipe */
+	p->pollfds.used = 1;
 	p->pollfds.size = 10;
 	p->pollfds.pollfds = xalloc(10 * sizeof *p->pollfds.pollfds);
 	p->pollfds.watched_fds = xalloc(10 * sizeof *p->pollfds.watched_fds);
+
+	check_syscall("pipe", !pipe(p->pipefd));
+
+	for (i = 0; i < 1; i++)
+		check_syscall("fcntl(..., F_SETFL, O_NONBLOCK)",
+			      fcntl(p->pipefd[i], F_SETFL, O_NONBLOCK) >= 0);
+
+	p->pollfds.pollfds[0].fd = p->pipefd[0];
+	p->pollfds.pollfds[0].events = POLLIN;
 
 	poll_common_init(&p->common);
 	return p;
@@ -65,8 +80,10 @@ void poll_destroy(struct poll *p)
 	mutex_lock(&p->common.mutex);
 	poll_common_stop(&p->common);
 	assert(!p->updates);
-	assert(!p->pollfds.used);
+	assert(p->pollfds.used == 1);
 	mutex_unlock_fini(&p->common.mutex);
+	check_syscall("close", !close(p->pipefd[0]));
+	check_syscall("close", !close(p->pipefd[1]));
 	free(p->pollfds.pollfds);
 	free(p->pollfds.watched_fds);
 	free(p);
@@ -227,6 +244,11 @@ static void remove_pollfd(struct pollfds *pollfds, size_t slot)
 		w->slot = -1;
 }
 
+void poll_thread_init(struct poll *p)
+{
+	(void)p;
+}
+
 void poll_prepare(struct poll *p)
 {
 	struct pollfds *pollfds = &p->pollfds;
@@ -260,21 +282,10 @@ void poll_prepare(struct poll *p)
 	p->updates = NULL;
 }
 
-void poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
+void poll_poll(struct poll *p, xtime_t timeout)
 {
-	struct timespec ts, *tsp;
-
-	if (timeout >= 0) {
-		ts.tv_sec = timeout / XTIME_SECOND;
-		ts.tv_nsec = xtime_to_ns(timeout % XTIME_SECOND);
-		tsp = &ts;
-	}
-	else {
-		tsp = NULL;
-	}
-
-	p->poll_result
-		= ppoll(p->pollfds.pollfds, p->pollfds.used, tsp, sigmask);
+	p->poll_result = poll(p->pollfds.pollfds, p->pollfds.used,
+			      timeout >= 0 ? (int)xtime_to_ms(timeout) : -1);
 	if (p->poll_result < 0 && errno != EINTR)
 		check_syscall("ppoll", FALSE);
 }
@@ -289,7 +300,13 @@ void poll_dispatch(struct poll *p)
 		/* Poll timed out, revents fields were not set. */
 		return;
 
-	for (i = 0; i < pollfds->used;) {
+	if (p->pollfds.pollfds[0].revents & POLLIN) {
+		/* data on wakeup pipe */
+		char c;
+		read(p->pipefd[0], &c, 1);
+	}
+
+	for (i = 1; i < pollfds->used;) {
 		struct pollfd *pollfd = &pollfds->pollfds[i];
 		struct watched_fd *w = pollfds->watched_fds[i];
 
@@ -300,11 +317,16 @@ void poll_dispatch(struct poll *p)
 			continue;
 		}
 
-
 		got = events_from_system(pollfd->revents);
 		w->interest &= ~got;
 		w->handler(w->data, got);
 		if (w->interest == 0)
 			remove_pollfd(pollfds, i);
 	}
+}
+
+void poll_wake(struct poll *p)
+{
+	char c = 0;
+	write(p->pipefd[1], &c, 1);
 }

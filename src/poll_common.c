@@ -45,7 +45,7 @@ void poll_common_wake(struct poll_common *p)
 {
 	if (!p->thread_woken) {
 		p->thread_woken = TRUE;
-		thread_signal(thread_get_handle(&p->thread), PRIVATE_SIGNAL);
+		poll_wake((struct poll *)p);
 	}
 }
 
@@ -217,15 +217,12 @@ static void poll_thread(void *v_p)
 {
 	struct poll_common *p = v_p;
 	struct run_queue *runq = run_queue_create();
-	sigset_t  sigmask;
 	xtime_t timeout;
 
 	application_assert_prepared();
 	run_queue_target(runq);
 
-	check_pthreads("pthread_sigmask",
-		       pthread_sigmask(SIG_SETMASK, NULL, &sigmask));
-	sigdelset(&sigmask, PRIVATE_SIGNAL);
+	poll_thread_init((struct poll *)p);
 
 	for (;;) {
 		mutex_lock(&p->mutex);
@@ -238,7 +235,7 @@ static void poll_thread(void *v_p)
 		mutex_unlock(&p->mutex);
 
 		if (timeout < 0 || (timeout -= time_now()) > 0)
-			poll_poll((struct poll *)p, timeout, &sigmask);
+			poll_poll((struct poll *)p, timeout);
 
 		mutex_lock(&p->mutex);
 		if (p->thread_stopping)

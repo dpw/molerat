@@ -1,5 +1,9 @@
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <signal.h>
+
+#include <molerat/base.h>
+#include <molerat/application.h>
 
 #include "poll.h"
 
@@ -32,10 +36,8 @@ static poll_events_t events_from_system(unsigned int events)
 
 struct poll {
 	struct poll_common common;
-	struct thread thread;
+	sigset_t sigmask;
 	int epfd;
-	bool_t thread_woken;
-	bool_t thread_stopping;
 	size_t watched_fd_count;
 	size_t gone_count;
 	struct watched_fd *gone;
@@ -181,17 +183,24 @@ void watched_fd_destroy(struct watched_fd *w)
 	mutex_unlock(&poll->common.mutex);
 }
 
+void poll_thread_init(struct poll *p)
+{
+	check_pthreads("pthread_sigmask",
+		       pthread_sigmask(SIG_SETMASK, NULL, &p->sigmask));
+	sigdelset(&p->sigmask, PRIVATE_SIGNAL);
+}
+
 void poll_prepare(struct poll *p)
 {
 	free_gone_watched_fds(p);
 }
 
-void poll_poll(struct poll *p, xtime_t timeout, sigset_t *sigmask)
+void poll_poll(struct poll *p, xtime_t timeout)
 {
 	if (timeout > 0)
 		timeout = xtime_to_ms(timeout);
 
-	p->ee_count = epoll_pwait(p->epfd, p->ee, 100, timeout, sigmask);
+	p->ee_count = epoll_pwait(p->epfd, p->ee, 100, timeout, &p->sigmask);
 	if (p->ee_count < 0 && errno != EINTR)
 		check_syscall("epoll_pwait", FALSE);
 }
@@ -207,4 +216,9 @@ void poll_dispatch(struct poll *p)
 			w->handler(w->data,
 				   events_from_system(p->ee[i].events));
 	}
+}
+
+void poll_wake(struct poll *p)
+{
+	thread_signal(thread_get_handle(&p->common.thread), PRIVATE_SIGNAL);
 }

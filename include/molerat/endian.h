@@ -1,9 +1,13 @@
 #ifndef MOLERAT_ENDIAN_H
 #define MOLERAT_ENDIAN_h
 
-/* This assume the Linux <endian.h>.  */
+/* This assumes the Linux/BSD <endian.h>.  */
 
+#ifdef __linux__
 #include <endian.h>
+#else
+#include <sys/endian.h>
+#endif
 
 #define ENDIAN_TYPE(prefix, size, e)                                  \
 typedef struct { uint##size##_t v; } prefix##size##_##e##_t;          \

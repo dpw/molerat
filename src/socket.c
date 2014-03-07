@@ -7,7 +7,7 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include <signal.h>
+#include <netinet/in.h>
 
 #include <molerat/socket.h>
 #include <molerat/tasklet.h>

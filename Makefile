@@ -27,10 +27,6 @@ VPATH=$(ROOT)
 # It's less likely that you'll want to override this
 PROJECT_CFLAGS:=-Wpointer-arith -I$(ROOT)include
 
-ifeq "$(TARGET_OS)" "Linux"
-PROJECT_CFLAGS+=-D_GNU_SOURCE -I$(ROOT)include-linux
-endif
-
 # Principal source files under src/
 SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 	poll_common.c poll_poll.c socket.c echo_server.c \
@@ -39,24 +35,21 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 	http_client.c http_status.c skinny-mutex/skinny_mutex.c \
 	stream.c delim_stream.c socket_transport.c
 ifeq "$(TARGET_OS)" "Linux"
+PROJECT_CFLAGS+=-D_GNU_SOURCE -I$(ROOT)include-linux
 SRCS+=poll_epoll.c
 USE_EPOLL=yes
+endif
+ifeq "$(TARGET_OS)" "FreeBSD"
+PROJECT_CFLAGS+=-I$(ROOT)include-bsd
+SRCS+=bsd/sort.c
+HDROBJS_$(ROOT)include-bsd/molerat/sort.h=src/bsd/sort.o
 endif
 
 # Test source files under test/
 TEST_SRCS=buffer_test.c tasklet_test.c queue_test.c socket_test.c timer_test.c \
 	stream_utils.c http_reader_test.c delim_stream_test.c transport_test.c
 
-# Header files under include
-HDRS=include/http-parser/http_parser.h include/skinny-mutex/skinny_mutex.h \
-	$(addprefix include/molerat/,base.h buffer.h thread.h tasklet.h \
-		application.h queue.h watched_fd.h stream.h socket.h \
-		echo_server.h http_reader.h http_status.h http_writer.h \
-		http_server.h delim_stream.h endian.h transport.h \
-		socket_transport.h) \
-	 src/poll.h test/stream_utils.h
-
-# Main exectuables that get built
+# Main executables that get built
 EXECUTABLES=echo_server http_status_gen http_server http_client
 
 # Test executables that get built
@@ -69,6 +62,15 @@ SRCDIRS=src src/skinny-mutex src/http-parser test
 # These HDROBJS definitions say which object files correspond to which
 # headers.  I.e., if the header file is included, then the given object
 # files should be linked in.
+
+# Most headers under include/molerat/ correspond to .c files under src/
+$(foreach H,base.h buffer.h thread.h tasklet.h \
+	application.h queue.h watched_fd.h stream.h socket.h \
+	echo_server.h http_reader.h http_status.h http_writer.h \
+	http_server.h delim_stream.h endian.h transport.h \
+	socket_transport.h,\
+	$(eval HDROBJS_$(ROOT)include/molerat/$(H)=src/$(notdir $(H:%.h=%.o))))
+
 HDROBJS_$(ROOT)src/poll.h=src/poll_common.o
 HDROBJS_$(ROOT)test/stream_utils.h=test/stream_utils.o
 
@@ -98,7 +100,6 @@ OBJNEEDS_-pthread=
 
 ALL_EXECUTABLES:=$(EXECUTABLES) $(TEST_EXECUTABLES)
 ALL_SRCS:=$(addprefix src/,$(SRCS)) $(addprefix test/,$(TEST_SRCS))
-$(foreach H,$(HDRS),$(eval HDROBJS_$(ROOT)$(H)?=src/$(notdir $(H:%.h=%.o))))
 
 # Disable builtin rules
 .SUFFIXES:

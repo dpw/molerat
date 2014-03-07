@@ -2,6 +2,7 @@
 
 #include <molerat/http_reader.h>
 #include <molerat/stream.h>
+#include <molerat/sort.h>
 
 static int on_url(struct http_parser *hp, const char *at, size_t len);
 static int on_url_cont(struct http_parser *hp, const char *at, size_t len);
@@ -187,9 +188,9 @@ enum http_reader_prebody_result http_reader_prebody(struct http_reader *r,
 				/* Full request has been read */
 				assert(r->state == HTTP_READER_BODY);
 				http_parser_pause(&r->parser, 0);
-				qsort_r(r->headers, r->headers_used,
-					sizeof(header_t),
-					compare_headers, &r->prebody);
+				xsort(r->headers, r->headers_used,
+				      sizeof(header_t),
+				      compare_headers, &r->prebody);
 				return HTTP_READER_PREBODY_DONE;
 
 			default:

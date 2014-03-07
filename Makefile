@@ -7,7 +7,7 @@ endif
 # Preliminaries
 .DEFAULT_GOAL:=all
 MAKEFILE:=$(firstword $(MAKEFILE_LIST))
-UNAME_S:=$(shell uname -s)
+TARGET_OS:=$(shell uname -s)
 
 # You can override this from the command line
 CFLAGS=-Wall -Wextra -Werror -ansi -g
@@ -25,7 +25,11 @@ ROOT=$(filter-out ./,$(dir $(MAKEFILE)))
 VPATH=$(ROOT)
 
 # It's less likely that you'll want to override this
-PROJECT_CFLAGS=-D_GNU_SOURCE -I$(ROOT)include -Wpointer-arith
+PROJECT_CFLAGS:=-Wpointer-arith -I$(ROOT)include
+
+ifeq "$(TARGET_OS)" "Linux"
+PROJECT_CFLAGS+=-D_GNU_SOURCE -I$(ROOT)include-linux
+endif
 
 # Principal source files under src/
 SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
@@ -34,7 +38,7 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 	http_status_gen.c http_writer.c http_server.c http_server_main.c \
 	http_client.c http_status.c skinny-mutex/skinny_mutex.c \
 	stream.c delim_stream.c socket_transport.c
-ifeq "$(UNAME_S)" "Linux"
+ifeq "$(TARGET_OS)" "Linux"
 SRCS+=poll_epoll.c
 USE_EPOLL=yes
 endif

@@ -31,7 +31,8 @@ static poll_events_t events_from_system(unsigned int events)
 {
 	return TRANSLATE_BIT(events, EPOLLIN, WATCHED_FD_IN)
 		| TRANSLATE_BIT(events, EPOLLOUT, WATCHED_FD_OUT)
-		| TRANSLATE_BIT(events, EPOLLERR, WATCHED_FD_ERR);
+		| TRANSLATE_BIT(events, EPOLLERR, WATCHED_FD_ERR)
+		| TRANSLATE_BIT(events, EPOLLHUP, WATCHED_FD_ERR);
 }
 
 struct poll {

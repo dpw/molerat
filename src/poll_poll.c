@@ -28,7 +28,8 @@ static poll_events_t events_from_system(unsigned int events)
 {
 	return TRANSLATE_BIT(events, POLLIN, WATCHED_FD_IN)
 		| TRANSLATE_BIT(events, POLLOUT, WATCHED_FD_OUT)
-		| TRANSLATE_BIT(events, POLLERR, WATCHED_FD_ERR);
+		| TRANSLATE_BIT(events, POLLERR, WATCHED_FD_ERR)
+		| TRANSLATE_BIT(events, POLLHUP, WATCHED_FD_ERR);
 }
 
 struct poll {
@@ -322,6 +323,8 @@ void poll_dispatch(struct poll *p)
 		w->handler(w->data, got);
 		if (w->interest == 0)
 			remove_pollfd(pollfds, i);
+		else
+			i++;
 	}
 }
 

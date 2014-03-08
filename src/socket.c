@@ -176,10 +176,10 @@ static void simple_socket_handle_events(void *v_s, poll_events_t events)
 {
 	struct simple_socket *s = v_s;
 
-	if (events & WATCHED_FD_IN)
+	if (events & (WATCHED_FD_IN | WATCHED_FD_ERR))
 		wait_list_broadcast(&s->reading);
 
-	if (events & WATCHED_FD_OUT)
+	if (events & (WATCHED_FD_OUT | WATCHED_FD_ERR))
 		wait_list_broadcast(&s->writing);
 }
 

@@ -9,6 +9,8 @@
 enum {
 	WATCHED_FD_IN = 1,
 	WATCHED_FD_OUT = 4,
+
+	/* WATCHED_FD_ERR does not need to be set in the interest. */
 	WATCHED_FD_ERR = 8
 };
 

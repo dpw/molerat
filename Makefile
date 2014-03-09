@@ -25,7 +25,7 @@ ROOT=$(filter-out ./,$(dir $(MAKEFILE)))
 VPATH=$(ROOT)
 
 # It's less likely that you'll want to override this
-PROJECT_CFLAGS:=-Wpointer-arith -I$(ROOT)include
+PROJECT_CFLAGS:=-I$(ROOT)include -Wpointer-arith
 
 # Principal source files under src/
 SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
@@ -37,14 +37,20 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 
 # OS specifics
 ifeq "$(TARGET_OS)" "Linux"
-PROJECT_CFLAGS+=-D_GNU_SOURCE -I$(ROOT)include-linux
+PROJECT_CFLAGS:=-D_GNU_SOURCE -I$(ROOT)include-linux $(PROJECT_CFLAGS)
 SRCS+=poll_epoll.c
 USE_EPOLL=yes
 endif
 ifeq "$(TARGET_OS)" "FreeBSD"
-PROJECT_CFLAGS+=-I$(ROOT)include-bsd
+PROJECT_CFLAGS:=-I$(ROOT)include-bsd $(PROJECT_CFLAGS)
 SRCS+=bsd/sort.c
 HDROBJS_$(ROOT)include-bsd/molerat/sort.h=src/bsd/sort.o
+endif
+ifeq "$(TARGET_OS)" "Darwin"
+PROJECT_CFLAGS:=-I$(ROOT)include-osx -I$(ROOT)include-bsd $(PROJECT_CFLAGS)
+SRCS+=bsd/sort.c
+HDROBJS_$(ROOT)include-bsd/molerat/sort.h=src/bsd/sort.o
+USE_PTHREAD_TLS=yes
 endif
 
 ifdef USE_PTHREAD_TLS

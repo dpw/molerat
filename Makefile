@@ -34,6 +34,8 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 	http_status_gen.c http_writer.c http_server.c http_server_main.c \
 	http_client.c http_status.c skinny-mutex/skinny_mutex.c \
 	stream.c delim_stream.c socket_transport.c
+
+# OS specifics
 ifeq "$(TARGET_OS)" "Linux"
 PROJECT_CFLAGS+=-D_GNU_SOURCE -I$(ROOT)include-linux
 SRCS+=poll_epoll.c
@@ -43,6 +45,10 @@ ifeq "$(TARGET_OS)" "FreeBSD"
 PROJECT_CFLAGS+=-I$(ROOT)include-bsd
 SRCS+=bsd/sort.c
 HDROBJS_$(ROOT)include-bsd/molerat/sort.h=src/bsd/sort.o
+endif
+
+ifdef USE_PTHREAD_TLS
+PROJECT_CFLAGS+=-DUSE_PTHREAD_TLS
 endif
 
 # Test source files under test/

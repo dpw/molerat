@@ -67,4 +67,33 @@ void cond_wait(struct cond *c, struct mutex *m);
 void cond_signal(struct cond *c);
 void cond_broadcast(struct cond *c);
 
+
+#ifndef USE_PTHREAD_TLS
+#define TLS_VAR_DECLARE_STATIC(name) static __thread void *name;
+#define TLS_VAR_GET(name) name
+#define TLS_VAR_SET(name, val) name = (val)
+#else
+struct tls_var {
+	pthread_once_t once;
+	pthread_key_t key;
+};
+
+#define TLS_VAR_DECLARE_STATIC(name)                                  \
+static pthread_once_t name##_once = PTHREAD_ONCE_INIT;                \
+static pthread_key_t name##_key;                                      \
+                                                                      \
+static void name##_once_func(void) {                                  \
+	check_pthreads("pthread_key_create",                          \
+		       pthread_key_create(&name##_key, NULL));        \
+}
+
+#define TLS_VAR_GET(name)                                             \
+(check_pthreads("pthread_once", pthread_once(&name##_once, name##_once_func)), \
+ pthread_getspecific(name##_key))
+
+#define TLS_VAR_SET(name, val)                                        \
+(check_pthreads("pthread_once", pthread_once(&name##_once, name##_once_func)), \
+ check_pthreads("pthread_setspecific", pthread_setspecific(name##_key, val)))
+#endif
+
 #endif

@@ -136,16 +136,16 @@ static void cleanup_default_worker(void)
 	worker_destroy(default_worker);
 }
 
-static __thread struct run_queue *tls_run_queue;
+TLS_VAR_DECLARE_STATIC(tls_run_queue);
 
 void run_queue_target(struct run_queue *runq)
 {
-	tls_run_queue = runq;
+	TLS_VAR_SET(tls_run_queue, runq);
 }
 
 static struct run_queue *thread_run_queue(void)
 {
-	struct run_queue *runq = tls_run_queue;
+	struct run_queue *runq = TLS_VAR_GET(tls_run_queue);
 	if (runq)
 		return runq;
 

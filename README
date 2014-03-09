@@ -19,21 +19,29 @@ code has to be follow certain idioms.  But those idioms are less
 cumbersome than trying to write callback-based code in C, particularly
 in a multithreaded context.
 
-Tasklets are very lightweight; millions of tasklets could fit in the
-memory of a modern machine.  Molerat schedules runnable tasklets onto
-a much smaller number of threads.
+Tasklets are very lightweight; many millions of tasklets could fit in
+the memory of a modern machine.  Molerat schedules runnable tasklets
+onto a much smaller number of threads.
 
 ## How can I play with Molerat?
 
-Molerat currently builds only on Linux.  There is nothing
-fundamentally Linux-specific about it, but no work has been done to
-port it to other platforms so far.
+Molerat works on Linux, OS X and FreeBSD (so it might work on other
+BSDs too).  Primary development is on Linux, so it's possible that the
+other supported platforms get broken from time to time.
 
-There are no dependencies or prerequisites except for gcc and make, so
+There are no dependencies or prerequisites except for gcc and GNU make, so
 after cloning the repo do:
 
     $ git submodule update --init
     $ make
+
+(On FreeBSD, substitute `gmake` for `make`.)
+
+Run the tests with:
+
+    $ make run_tests
+
+This only takes a few seconds.
 
 The only demo application so far is a rudimentary HTTP server and
 client.

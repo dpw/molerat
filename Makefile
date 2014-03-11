@@ -39,17 +39,20 @@ SRCS=base.c buffer.c thread.c tasklet.c application.c queue.c \
 ifeq "$(TARGET_OS)" "Linux"
 PROJECT_CFLAGS:=-D_GNU_SOURCE -I$(ROOT)include-linux $(PROJECT_CFLAGS)
 SRCS+=poll_epoll.c
+HDROBJS_/usr/include/pthread.h=-pthread
 USE_EPOLL=yes
 endif
 ifeq "$(TARGET_OS)" "FreeBSD"
 PROJECT_CFLAGS:=-I$(ROOT)include-bsd $(PROJECT_CFLAGS)
 SRCS+=bsd/sort.c
 HDROBJS_$(ROOT)include-bsd/molerat/sort.h=src/bsd/sort.o
+HDROBJS_/usr/include/pthread.h=-pthread
 endif
 ifeq "$(TARGET_OS)" "Darwin"
 PROJECT_CFLAGS:=-I$(ROOT)include-osx -I$(ROOT)include-bsd $(PROJECT_CFLAGS)
 SRCS+=bsd/sort.c
 HDROBJS_$(ROOT)include-bsd/molerat/sort.h=src/bsd/sort.o
+HDROBJS_/usr/include/pthread.h=
 USE_PTHREAD_TLS=yes
 endif
 
@@ -107,7 +110,6 @@ MAINOBJ_http_server=src/http_server_main.o
 # That completes the definition of the project sources and structure.
 # Now for the magic.
 
-HDROBJS_/usr/include/pthread.h=-pthread
 OBJNEEDS_-pthread=
 
 ALL_EXECUTABLES:=$(EXECUTABLES) $(TEST_EXECUTABLES)

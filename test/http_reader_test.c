@@ -185,9 +185,7 @@ static void http_reader_test(void *v_t)
 		assert(http_reader_method(&t->reader) == HTTP_GET);
 		assert(bytes_compare(http_reader_url(&t->reader),
 				     c_string_bytes("req3")));
-		/* This is actually wrong, it should be "foo bar", but
-		   looks like a bug in http-parser */
-		check_headers(&t->reader, 3, "<Continuated-Header>=<foobar>,<Host>=<baz.example.com>,<User-Agent>=<UA3>");
+		check_headers(&t->reader, 3, "<Continuated-Header>=<foo bar>,<Host>=<baz.example.com>,<User-Agent>=<UA3>");
 
 	STEP:
 		res = http_reader_body(&t->reader, t->buf, 1, &t->tasklet,

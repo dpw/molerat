@@ -1,5 +1,5 @@
 #ifndef MOLERAT_ENDIAN_H
-#define MOLERAT_ENDIAN_h
+#define MOLERAT_ENDIAN_H
 
 /* This assumes the Linux/BSD <endian.h>.  */
 

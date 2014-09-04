@@ -53,12 +53,17 @@ SRCS:=
 EXECUTABLES:=
 TEST_EXECUTABLES:=
 TO_CLEAN:=
+PROJECT_CFLAGS:=
 SROOT:=$(VPATH)$(ROOT)
 include $(SROOT)project.mk
 ALL_SRCS+=$(addprefix $(ROOT),$(SRCS))
 ALL_EXECUTABLES+=$(addprefix $(ROOT),$(EXECUTABLES))
 ALL_TEST_EXECUTABLES+=$(addprefix $(ROOT),$(TEST_EXECUTABLES))
 ALL_TO_CLEAN+=$(addprefix $(ROOT),$(TO_CLEAN))
+
+ifdef PROJECT_CFLAGS
+$(foreach S,$(SRCS),$(eval CFLAGS_$(ROOT)$(S):=$(BASE_CFLAGS) $(PROJECT_CFLAGS)))
+endif
 
 # Do subprojects
 DEPTH:=$(DEPTH)x
@@ -87,7 +92,7 @@ clean::
 
 %.o %.c.dep: %.c
 	@mkdir -p $(@D)
-	$(COMPILE.c) $(BASE_CFLAGS) -MD -o $*.o $<
+	$(COMPILE.c) $(or $(CFLAGS_$(patsubst $(VPATH)%,%,$<)),$(BASE_CFLAGS)) -MD -o $*.o $<
 	@sed -e 's|^\([^:]*\):|$*.o $*.c.dep:|' <$*.d >>$*.c.dep
 	@sed -e 's/#.*//;s/^[^:]*://;s/ *\\$$//;s/^ *//;/^$$/d;s/$$/ :/' <$*.d >>$*.c.dep
 	@sed -e 's/#.*//;s/ [^ ]*\.c//g;s/^\([^ ][^ ]*\):/OBJNEEDS_\1=/;s/\([^ ]*\.h\)/\$$(HDROBJS_\1)/g' <$*.d >>$*.c.dep

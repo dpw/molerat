@@ -6,23 +6,23 @@ SRCS+=$(addprefix src/,base.c buffer.c thread.c tasklet.c application.c \
 	http_client.c http_status.c skinny-mutex/skinny_mutex.c \
 	stream.c delim_stream.c socket_transport.c)
 
-BASE_CFLAGS:=-I$(SROOT)include $(BASE_CFLAGS)
+PROJECT_CFLAGS:=-I$(SROOT)include
 
 # OS specifics
 ifeq "$(TARGET_OS)" "Linux"
-BASE_CFLAGS:=-D_GNU_SOURCE -I$(SROOT)include-linux $(BASE_CFLAGS)
+PROJECT_CFLAGS+=-D_GNU_SOURCE -I$(SROOT)include-linux
 SRCS+=src/poll_epoll.c
 HDROBJS_/usr/include/pthread.h:=-pthread
 USE_EPOLL:=yes
 endif
 ifeq "$(TARGET_OS)" "FreeBSD"
-BASE_CFLAGS:=-I$(SROOT)include-bsd $(BASE_CFLAGS)
+PROJECT_CFLAGS+=-I$(SROOT)include-bsd
 SRCS+=src/bsd/sort.c
 HDROBJS_$(SROOT)include-bsd/molerat/sort.h:=$(ROOT)src/bsd/sort.o
 HDROBJS_/usr/include/pthread.h:=-pthread
 endif
 ifeq "$(TARGET_OS)" "Darwin"
-BASE_CFLAGS:=-I$(SROOT)include-osx -I$(SROOT)include-bsd $(BASE_CFLAGS)
+PROJECT_CFLAGS+=-I$(SROOT)include-osx -I$(SROOT)include-bsd
 SRCS+=src/bsd/sort.c
 HDROBJS_$(SROOT)include-bsd/molerat/sort.h:=$(ROOT)src/bsd/sort.o
 HDROBJS_/usr/include/pthread.h:=
@@ -30,7 +30,7 @@ USE_PTHREAD_TLS:=yes
 endif
 
 ifdef USE_PTHREAD_TLS
-BASE_CFLAGS+=-DUSE_PTHREAD_TLS
+PROJECT_CFLAGS+=-DUSE_PTHREAD_TLS
 endif
 
 # Test source files under test/

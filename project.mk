@@ -86,3 +86,5 @@ $(ROOT)src/http_status.c: $(ROOT)http_status_gen
 	$(<D)/$< >$@
 
 TO_CLEAN+=src/http_status.c
+
+SUBPROJECTS:=euphemus

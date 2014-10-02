@@ -6,3 +6,6 @@
 	path = src/skinny-mutex
 	url = https://github.com/dpw/skinny-mutex
 	ignore = dirty
+[submodule "euphemus"]
+	path = euphemus
+	url = git@github.com:dpw/euphemus.git

@@ -92,7 +92,7 @@ clean::
 
 %.o %.c.dep: %.c
 	@mkdir -p $(@D)
-	$(COMPILE.c) $(or $(CFLAGS_$(patsubst $(VPATH)%,%,$<)),$(BASE_CFLAGS)) -MD -o $*.o $<
+	$(COMPILE.c) $(or $(CFLAGS_$(patsubst $(VPATH)%,%,$<)),$(BASE_CFLAGS)) $(and $(VPATH),-iquote$(patsubst $(VPATH)%,%,$(<D))) -MD -o $*.o $<
 	@sed -e 's|^\([^:]*\):|$*.o $*.c.dep:|' <$*.d >>$*.c.dep
 	@sed -e 's/#.*//;s/^[^:]*://;s/ *\\$$//;s/^ *//;/^$$/d;s/$$/ :/' <$*.d >>$*.c.dep
 	@sed -e 's/#.*//;s/ [^ ]*\.c//g;s/^\([^ ][^ ]*\):/OBJNEEDS_\1=/;s/\([^ ]*\.h\)/\$$(HDROBJS_\1)/g' <$*.d >>$*.c.dep

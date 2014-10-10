@@ -45,10 +45,16 @@ void tasklet_fini(struct tasklet *t);
 void tasklet_stop(struct tasklet *t);
 void tasklet_run(struct tasklet *t);
 
-static inline void tasklet_goto(struct tasklet *t, void (*handler)(void *))
+static inline void tasklet_set_handler(struct tasklet *t,
+				       void (*handler)(void *))
 {
 	mutex_assert_held(t->mutex);
 	t->handler = handler;
+}
+
+static inline void tasklet_goto(struct tasklet *t, void (*handler)(void *))
+{
+	tasklet_set_handler(t, handler);
 	handler(t->data);
 }
 

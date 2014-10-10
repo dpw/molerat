@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <string.h>
 
 #include <molerat/socket.h>
 #include <molerat/tasklet.h>
@@ -10,17 +9,18 @@
 #include <molerat/http_writer.h>
 
 struct http_server {
+	http_server_callback callback;
+
 	struct mutex mutex;
 	struct tasklet tasklet;
 	struct server_socket *server_socket;
-	bool_t verbose;
 
-	struct connection **connections;
+	struct http_server_exchange **connections;
 	size_t connections_used;
 	size_t connections_size;
 };
 
-struct connection {
+struct http_server_exchange {
 	struct http_server *server;
 	size_t index;
 
@@ -32,22 +32,20 @@ struct connection {
 	struct error err;
 	struct http_reader reader;
 	struct http_writer writer;
-	size_t body_len;
-	size_t body_pos;
 };
 
 static void http_server_accept(void *v_hs);
 
 struct http_server *http_server_create(struct server_socket *s,
-				       bool_t verbose)
+				       http_server_callback cb)
 {
-	struct http_server *hs;
+	struct http_server *hs = xalloc(sizeof *hs);
 
-	hs = xalloc(sizeof *hs);
+	hs->callback = cb;
+
 	mutex_init(&hs->mutex);
 	tasklet_init(&hs->tasklet, &hs->mutex, hs);
 	hs->server_socket = s;
-	hs->verbose = verbose;
 
 	hs->connections_used = 0;
 	hs->connections_size = 10;
@@ -61,7 +59,8 @@ struct http_server *http_server_create(struct server_socket *s,
 	return hs;
 }
 
-static void add_connection(struct http_server *server, struct connection *conn)
+static void add_connection(struct http_server *server,
+			   struct http_server_exchange *conn)
 {
 	size_t index = server->connections_used;
 
@@ -78,7 +77,7 @@ static void add_connection(struct http_server *server, struct connection *conn)
 	conn->index = index;
 }
 
-static void remove_connection(struct connection *conn)
+static void remove_connection(struct http_server_exchange *conn)
 {
 	struct http_server *server = conn->server;
 
@@ -90,7 +89,7 @@ static void remove_connection(struct connection *conn)
 }
 
 static void connection_create(struct http_server *server, struct socket *s);
-static void connection_destroy_locked(struct connection *conn);
+static void connection_destroy_locked(struct http_server_exchange *conn);
 
 void http_server_destroy(struct http_server *hs)
 {
@@ -100,13 +99,9 @@ void http_server_destroy(struct http_server *hs)
 	server_socket_destroy(hs->server_socket);
 
 	/* Close all existing connections */
-	for (;;) {
-		struct connection *conn;
+	while (hs->connections_used) {
+		struct http_server_exchange *conn = hs->connections[0];
 
-		if (!hs->connections_used)
-			break;
-
-		conn = hs->connections[0];
 		if (mutex_transfer(&hs->mutex, &conn->mutex)) {
 			connection_destroy_locked(conn);
 			mutex_lock(&hs->mutex);
@@ -153,9 +148,7 @@ static void http_server_accept(void *v_hs)
 
 	while ((s = server_socket_accept(hs->server_socket, &hs->tasklet,
 					 &err))) {
-		if (hs->verbose)
-			announce_connection(s);
-
+		announce_connection(s);
 		connection_create(hs, s);
 	}
 
@@ -165,21 +158,17 @@ static void http_server_accept(void *v_hs)
 	error_fini(&err);
 }
 
-static void connection_read_body(void *v_c);
-static void connection_read_prebody(void *v_c);
-static void respond(struct connection *c);
-static void connection_write(void *v_c);
-static void connection_finish_write(void *v_c);
+static void connection_read_prebody_handler(void *v_c);
 static void connection_timeout(void *v_c);
 
-static void update_timeout(struct connection *c)
+static void update_timeout(struct http_server_exchange *c)
 {
 	timer_set_relative(&c->timeout, 240 * XTIME_SECOND, 241 * XTIME_SECOND);
 }
 
 static void connection_create(struct http_server *server, struct socket *s)
 {
-	struct connection *conn = xalloc(sizeof *conn);
+	struct http_server_exchange *conn = xalloc(sizeof *conn);
 
 	mutex_init(&conn->mutex);
 	conn->socket = s;
@@ -193,12 +182,12 @@ static void connection_create(struct http_server *server, struct socket *s)
 	add_connection(server, conn);
 
 	mutex_lock(&conn->mutex);
-	tasklet_later(&conn->tasklet, connection_read_prebody);
+	tasklet_later(&conn->tasklet, connection_read_prebody_handler);
 	tasklet_later(&conn->timeout_tasklet, connection_timeout);
 	mutex_unlock(&conn->mutex);
 }
 
-static void connection_destroy_locked(struct connection *conn)
+static void connection_destroy_locked(struct http_server_exchange *conn)
 {
 	mutex_assert_held(&conn->mutex);
 
@@ -215,35 +204,21 @@ static void connection_destroy_locked(struct connection *conn)
 	free(conn);
 }
 
-static void dump_headers(struct http_reader *r)
+static bool_t connection_read_prebody(struct http_server_exchange *c)
 {
-	struct http_header_iter iter;
-	struct http_header *header;
-
-	for (http_reader_headers(r, &iter);
-	     (header = http_header_iter_next(&iter));) {
-		printf("Header <%.*s> <%.*s>\n",
-		       (int)header->name_len, header->name,
-		       (int)header->value_len, header->value);
-	}
-}
-
-static void connection_read_prebody(void *v_c)
-{
-	struct connection *c = v_c;
-
 	switch (http_reader_prebody(&c->reader, &c->tasklet, &c->err)) {
 	case HTTP_READER_PREBODY_PROGRESS:
 		update_timeout(c);
 		/* Fall through */
 
 	case HTTP_READER_PREBODY_WAITING:
-		return;
+		return TRUE;
 
 	case HTTP_READER_PREBODY_DONE:
-		dump_headers(&c->reader);
-		tasklet_goto(&c->tasklet, connection_read_body);
-		return;
+		timer_cancel(&c->timeout);
+		tasklet_stop(&c->tasklet);
+		c->server->callback(c, &c->reader, &c->writer);
+		return TRUE;
 
 	case HTTP_READER_PREBODY_CLOSED:
 		break;
@@ -258,7 +233,7 @@ static void connection_read_prebody(void *v_c)
 		goto stop;
 
 	case STREAM_WAITING:
-		return;
+		return TRUE;
 
 	default:
 		break;
@@ -269,110 +244,34 @@ static void connection_read_prebody(void *v_c)
 
  stop:
 	connection_destroy_locked(c);
+	return FALSE;
 }
 
-static void connection_read_body(void *v_c)
+static void connection_read_prebody_handler(void *v_c)
 {
-	char buf[100];
-	struct connection *c = v_c;
+	connection_read_prebody(v_c);
+}
 
-	for (;;) {
-		ssize_t res = http_reader_body(&c->reader, buf, 100,
-					       &c->tasklet, &c->err);
-		switch (res) {
-		case STREAM_WAITING:
-			return;
+void http_server_exchange_done(struct http_server_exchange *c,
+			       struct error *err)
+{
+	mutex_lock(&c->mutex);
 
-		case STREAM_ERROR:
-			fprintf(stderr, "Error: %s\n", error_message(&c->err));
-			connection_destroy_locked(c);
-			return;
-
-		case STREAM_END:
-			respond(c);
-			return;
-
-		default:
-			assert(res >= 0);
-			break;
-		}
-
-		fprintf(stderr, "Read %ld body bytes\n", (long)res);
+	if (!err) {
+		update_timeout(c);
+		tasklet_set_handler(&c->tasklet,
+				    connection_read_prebody_handler);
+		if (connection_read_prebody(c))
+			mutex_unlock(&c->mutex);
 	}
-}
-
-static const char body[] = "<html><body><h1>Hello from Molerat</h1><form action='/' method='post'><input type='hidden' name='foo' value='bar'><input type='submit' value='Send a POST request'></form></body></html>";
-
-
-static void respond(struct connection *c)
-{
-	timer_cancel(&c->timeout);
-
-	c->body_len = strlen(body);
-	c->body_pos = 0;
-
-	http_writer_response(&c->writer, 200);
-	http_writer_header(&c->writer, "Server","Molerat");
-	http_writer_headerf(&c->writer, "Content-Length", "%lu",
-			    (unsigned long)c->body_len);
-	http_writer_header(&c->writer, "Content-Type",
-			   "text/html; charset=utf-8");
-
-	tasklet_goto(&c->tasklet, connection_write);
-}
-
-
-static void connection_write(void *v_c)
-{
-	struct connection *c = v_c;
-
-	while (c->body_pos < c->body_len) {
-		ssize_t res = http_writer_write(&c->writer,
-						body + c->body_pos,
-						c->body_len - c->body_pos,
-						&c->tasklet, &c->err);
-		switch (res) {
-		case STREAM_WAITING:
-			return;
-
-		case STREAM_ERROR:
-			fprintf(stderr, "Error: %s\n", error_message(&c->err));
-			connection_destroy_locked(c);
-			return;
-
-		default:
-			assert(res >= 0);
-			break;
-		}
-
-		c->body_pos += res;
-	}
-
-	tasklet_goto(&c->tasklet, connection_finish_write);
-}
-
-static void connection_finish_write(void *v_c)
-{
-	struct connection *c = v_c;
-
-	switch (http_writer_end(&c->writer, &c->tasklet, &c->err)) {
-	case HTTP_WRITER_END_WAITING:
-		return;
-
-	case HTTP_WRITER_END_ERROR:
-		fprintf(stderr, "Error: %s\n", error_message(&c->err));
+	else {
 		connection_destroy_locked(c);
-		return;
-
-	case HTTP_WRITER_END_DONE:
-		tasklet_later(&c->tasklet, connection_read_prebody);
-		return;
 	}
 }
 
 static void connection_timeout(void *v_c)
 {
-	struct connection *c = v_c;
+	struct http_server_exchange *c = v_c;
 
 	if (!timer_wait(&c->timeout, &c->timeout_tasklet))
 		return;

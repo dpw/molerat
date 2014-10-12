@@ -10,6 +10,7 @@
 
 struct http_server {
 	http_server_callback callback;
+	void *callback_data;
 
 	struct mutex mutex;
 	struct tasklet tasklet;
@@ -37,11 +38,12 @@ struct http_server_exchange {
 static void http_server_accept(void *v_hs);
 
 struct http_server *http_server_create(struct server_socket *s,
-				       http_server_callback cb)
+				       http_server_callback cb, void *data)
 {
 	struct http_server *hs = xalloc(sizeof *hs);
 
 	hs->callback = cb;
+	hs->callback_data = data;
 
 	mutex_init(&hs->mutex);
 	tasklet_init(&hs->tasklet, &hs->mutex, hs);
@@ -217,7 +219,8 @@ static bool_t connection_read_prebody(struct http_server_exchange *c)
 	case HTTP_READER_PREBODY_DONE:
 		timer_cancel(&c->timeout);
 		tasklet_stop(&c->tasklet);
-		c->server->callback(c, &c->reader, &c->writer);
+		c->server->callback(c->server->callback_data,
+				    c, &c->reader, &c->writer);
 		return TRUE;
 
 	case HTTP_READER_PREBODY_CLOSED:

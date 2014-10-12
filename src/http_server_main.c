@@ -40,11 +40,15 @@ static void dump_headers(struct http_reader *r)
 	}
 }
 
-static void callback(struct http_server_exchange *sx,
+static void callback(void *data, struct http_server_exchange *sx,
 		     struct http_reader *hr,
 		     struct http_writer *hw)
 {
-	struct exchange *ex = xalloc(sizeof *ex);
+	struct exchange *ex;
+
+	(void)data;
+
+	ex = xalloc(sizeof *ex);
 	ex->server_exchange = sx;
 	ex->reader = hr;
 	ex->writer = hw;
@@ -203,7 +207,7 @@ int main(int argc, char **argv)
 	if (!error_ok(&err))
 		goto out;
 
-	hs = http_server_create(ss, callback);
+	hs = http_server_create(ss, callback, NULL);
 	if (!hs)
 		goto out;
 

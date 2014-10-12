@@ -40,9 +40,8 @@ static void dump_headers(struct http_reader *r)
 	}
 }
 
-static void callback(void *data, struct http_server_exchange *sx,
-		     struct http_reader *hr,
-		     struct http_writer *hw)
+static void handler(void *data, struct http_server_exchange *sx,
+		    struct http_reader *hr, struct http_writer *hw)
 {
 	struct exchange *ex;
 
@@ -207,7 +206,7 @@ int main(int argc, char **argv)
 	if (!error_ok(&err))
 		goto out;
 
-	hs = http_server_create(ss, callback, NULL);
+	hs = http_server_create(ss, handler, NULL);
 	if (!hs)
 		goto out;
 

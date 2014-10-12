@@ -8,13 +8,14 @@ struct http_server_exchange;
 void http_server_exchange_done(struct http_server_exchange *ex,
 			       struct error *err);
 
-typedef void (*http_server_callback)(void *data,
+typedef void (*http_server_handler_t)(void *data,
 				     struct http_server_exchange *ex,
 				     struct http_reader *hr,
 				     struct http_writer *hw);
 
 struct http_server *http_server_create(struct server_socket *s,
-				       http_server_callback cb, void *data);
+				       http_server_handler_t handler,
+				       void *data);
 void http_server_destroy(struct http_server *hs);
 
 #endif

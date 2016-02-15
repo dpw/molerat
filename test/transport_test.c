@@ -27,6 +27,7 @@ static void read_message(void *v_i)
 {
 	struct incoming *i = v_i;
 	struct receiver *r;
+	bool_t done;
 
 	for (;;) {
 		switch (stream_read_growbuf(i->input, &i->buf, &i->tasklet,
@@ -56,11 +57,11 @@ static void read_message(void *v_i)
 	free(i);
 
 	mutex_lock(&r->mutex);
-
-	if (++r->received == MESSAGES)
-		application_stop();
-
+	done = (++r->received == MESSAGES);
 	mutex_unlock(&r->mutex);
+
+	if (done)
+		application_stop();
 }
 
 static void handler(struct stream *input, void *v_r)

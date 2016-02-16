@@ -541,7 +541,6 @@ void run_queue_run(struct run_queue *runq, int wait)
 			/* tasklet was destroyed */
 			goto next;
 
-		mutex_unlock(t->mutex);
 		switch (runq->current_state) {
 		case CURRENT_STARTED:
 			/* Detect dangling tasklets that are not on a
@@ -558,6 +557,8 @@ void run_queue_run(struct run_queue *runq, int wait)
 		case CURRENT_REQUEUE:
 			run_queue_enqueue(runq, t);
 		}
+
+		mutex_unlock(t->mutex);
 
 	next:
 		if (runq->stop_waiting) {

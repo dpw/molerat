@@ -304,7 +304,8 @@ void poll_dispatch(struct poll *p)
 	if (p->pollfds.pollfds[0].revents & POLLIN) {
 		/* data on wakeup pipe */
 		char c;
-		read(p->pipefd[0], &c, 1);
+		while (read(p->pipefd[0], &c, 1) < 0 && errno == EINTR)
+		/* loop */;
 	}
 
 	for (i = 1; i < pollfds->used;) {
@@ -331,5 +332,6 @@ void poll_dispatch(struct poll *p)
 void poll_wake(struct poll *p)
 {
 	char c = 0;
-	write(p->pipefd[1], &c, 1);
+	while (write(p->pipefd[1], &c, 1) < 0 && errno == EINTR)
+		/* loop */;
 }

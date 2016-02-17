@@ -201,6 +201,7 @@ int main(int argc, char **argv)
 	default:
 		error_set(&err, ERROR_MISC,
 			  "usage: %s [<host>] <service>", argv[0]);
+		goto out;
 	}
 
 	if (!error_ok(&err))

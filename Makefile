@@ -130,8 +130,8 @@ $(1)
 
 endef
 
-.PHONY: run_tests
-run_tests: $(ALL_TEST_EXECUTABLES)
+.PHONY: test
+test: $(ALL_TEST_EXECUTABLES)
 	$(foreach T,$(ALL_TEST_EXECUTABLES),$(call recipe_line,./$(T)))
 
 .PHONY: coverage

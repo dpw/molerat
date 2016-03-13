@@ -8,4 +8,4 @@
 	ignore = dirty
 [submodule "euphemus"]
 	path = euphemus
-	url = git@github.com:dpw/euphemus.git
+	url = https://github.com/dpw/euphemus
